@@ -132,7 +132,7 @@ fn (mut vd VDoc) collect_search_index(out Output) {
 			doc.head.merge_comments_without_examples()
 		}
 		vd.search_module_data << SearchModuleResult{
-			description: trim_doc_node_description(comments)
+			description: trim_doc_node_description(mod, comments)
 			link: vd.get_file_name(mod, out)
 		}
 		for _, dn in doc.contents {
@@ -151,7 +151,7 @@ fn (mut vd VDoc) create_search_results(mod string, dn doc.DocNode, out Output) {
 	} else {
 		dn.merge_comments_without_examples()
 	}
-	dn_description := trim_doc_node_description(comments)
+	dn_description := trim_doc_node_description(dn.name, comments)
 	vd.search_index << dn.name
 	vd.search_data << SearchResult{
 		prefix: if dn.parent_name != '' { '${dn.kind} (${dn.parent_name})' } else { '${dn.kind} ' }
@@ -511,13 +511,21 @@ fn doc_node_html(dn doc.DocNode, link string, head bool, include_examples bool, 
 		readme_lines := dn.comments[0].text.split_into_lines()
 		mut merged_lines := []string{}
 		mut is_codeblock := false
-		for i := 0; i < readme_lines.len - 1; i++ {
+		for i := 0; i < readme_lines.len; i++ {
 			l := readme_lines[i]
-			nl := readme_lines[i + 1]
-			if l.trim_left('\x01').trim_space().starts_with('```') {
+			nl := readme_lines[i + 1] or {
+				merged_lines << l
+				break
+			}
+			l_trimmed := l.trim_left('\x01').trim_space()
+			if l_trimmed.starts_with('```') {
 				is_codeblock = !is_codeblock
 			}
-			if !is_codeblock && l != '' && nl != ''
+			// -> if l_trimmed.len > 1 && (is_ul || is_ol)
+			is_list := l_trimmed.len > 1 && ((l_trimmed[1] == ` ` && l_trimmed[0] in [`*`, `-`])
+				|| (l_trimmed.len > 2 && l_trimmed[2] == ` ` && l_trimmed[1] == `.`
+				&& l_trimmed[0].is_digit()))
+			if !is_codeblock && l != '' && nl != '' && !is_list
 				&& !nl.trim_left('\x01').trim_space().starts_with('```') {
 				merged_lines << '${l} ${nl}'
 				i++
