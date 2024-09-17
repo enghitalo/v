@@ -146,9 +146,9 @@ pub fn new_checker(table &ast.Table, pref_ &pref.Preferences) &Checker {
 		timers_should_print = true
 	}
 	mut checker := &Checker{
-		table:  table
-		pref:   pref_
-		timers: util.new_timers(
+		table:                         table
+		pref:                          pref_
+		timers:                        util.new_timers(
 			should_print: timers_should_print
 			label:        'checker'
 		)
@@ -361,7 +361,7 @@ pub fn (mut c Checker) check_files(ast_files []&ast.File) {
 	// is needed when the generic type is auto inferred from the call argument.
 	// we may have to loop several times, if there were more concrete types found.
 	mut post_process_generic_fns_iterations := 0
-	post_process_iterations_loop: for post_process_generic_fns_iterations <= checker.generic_fn_postprocess_iterations_cutoff_limit {
+	post_process_iterations_loop: for post_process_generic_fns_iterations <= generic_fn_postprocess_iterations_cutoff_limit {
 		$if trace_post_process_generic_fns_loop ? {
 			eprintln('>>>>>>>>> recheck_generic_fns loop iteration: ${post_process_generic_fns_iterations}')
 		}
@@ -507,7 +507,7 @@ fn (mut c Checker) check_valid_pascal_case(name string, identifier string, pos t
 }
 
 fn (mut c Checker) type_decl(node ast.TypeDecl) {
-	if node.typ == ast.invalid_type_idx && (node is ast.AliasTypeDecl || node is ast.SumTypeDecl) {
+	if node.typ == ast.invalid_type && (node is ast.AliasTypeDecl || node is ast.SumTypeDecl) {
 		typ_desc := if node is ast.AliasTypeDecl { 'alias' } else { 'sum type' }
 		c.error('cannot register ${typ_desc} `${node.name}`, another type with this name exists',
 			node.pos)
@@ -755,7 +755,7 @@ and use a reference to the sum type instead: `var := &${node.name}(${variant_nam
 
 fn (mut c Checker) expand_iface_embeds(idecl &ast.InterfaceDecl, level int, iface_embeds []ast.InterfaceEmbedding) []ast.InterfaceEmbedding {
 	// eprintln('> expand_iface_embeds: idecl.name: $idecl.name | level: $level | iface_embeds.len: $iface_embeds.len')
-	if level > checker.iface_level_cutoff_limit {
+	if level > iface_level_cutoff_limit {
 		c.error('too many interface embedding levels: ${level}, for interface `${idecl.name}`',
 			idecl.pos)
 		return []
@@ -852,7 +852,7 @@ fn (mut c Checker) fail_if_immutable(mut expr ast.Expr) (string, token.Pos) {
 				return to_lock, pos
 			}
 			left_sym := c.table.sym(expr.left_type)
-			mut elem_type := ast.Type(0)
+			mut elem_type := ast.no_type
 			mut kind := ''
 			match left_sym.info {
 				ast.Array {
@@ -953,7 +953,7 @@ fn (mut c Checker) fail_if_immutable(mut expr ast.Expr) (string, token.Pos) {
 				}
 				.sum_type {
 					sumtype_info := typ_sym.info as ast.SumType
-					mut field_info := sumtype_info.find_field(expr.field_name) or {
+					mut field_info := sumtype_info.find_sum_type_field(expr.field_name) or {
 						type_str := c.table.type_to_str(expr.expr_type)
 						c.error('unknown field `${type_str}.${expr.field_name}`', expr.pos)
 						return '', expr.pos
@@ -1098,16 +1098,6 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 		// Verify methods
 		for imethod in imethods {
 			method := c.table.find_method_with_embeds(typ_sym, imethod.name) or {
-				// >> Hack to allow old style custom error implementations
-				// TODO: remove once deprecation period for `IError` methods has ended
-				if inter_sym.idx == ast.error_type_idx
-					&& (imethod.name == 'msg' || imethod.name == 'code') {
-					c.note("`${styp}` doesn't implement method `${imethod.name}` of interface `${inter_sym.name}`. The usage of fields is being deprecated in favor of methods.",
-						pos)
-					return false
-				}
-				// <<
-
 				typ_sym.find_method_with_generic_parent(imethod.name) or {
 					c.error("`${styp}` doesn't implement method `${imethod.name}` of interface `${inter_sym.name}`",
 						pos)
@@ -1150,16 +1140,8 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 			}
 			// voidptr is an escape hatch, it should be allowed to be passed
 			if utyp != ast.voidptr_type && utyp != ast.nil_type {
-				// >> Hack to allow old style custom error implementations
-				// TODO: remove once deprecation period for `IError` methods has ended
-				if inter_sym.idx == ast.error_type_idx
-					&& (ifield.name == 'msg' || ifield.name == 'code') {
-					// do nothing, necessary warnings are already printed
-				} else {
-					// <<
-					c.error("`${styp}` doesn't implement field `${ifield.name}` of interface `${inter_sym.name}`",
-						pos)
-				}
+				c.error("`${styp}` doesn't implement field `${ifield.name}` of interface `${inter_sym.name}`",
+					pos)
 			}
 		}
 		if utyp != ast.voidptr_type && utyp != ast.nil_type && utyp != ast.none_type
@@ -1487,7 +1469,7 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			valid_generic := util.is_generic_type_name(name) && c.table.cur_fn != unsafe { nil }
 				&& name in c.table.cur_fn.generic_names
 			if valid_generic {
-				name_type = ast.Type(c.table.find_type_idx(name)).set_flag(.generic)
+				name_type = ast.idx_to_type(c.table.find_type_idx(name)).set_flag(.generic)
 			}
 		}
 		ast.TypeOf {
@@ -1614,6 +1596,12 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			node.from_embed_types = embed_types
 			if sym.kind in [.aggregate, .sum_type] {
 				unknown_field_msg = err.msg()
+				// TODO need a better way to check that we need to display sum type variants info
+				if unknown_field_msg.contains('does not exist or have the same type in all sumtype') {
+					info := sym.info as ast.SumType
+					missing_variants := c.table.find_missing_variants(info, field_name)
+					unknown_field_msg += missing_variants
+				}
 			}
 		}
 		if !c.inside_unsafe {
@@ -1647,20 +1635,6 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			}
 		}
 	}
-
-	// >> Hack to allow old style custom error implementations
-	// TODO: remove once deprecation period for `IError` methods has ended
-	if sym.idx == ast.error_type_idx && !c.is_just_builtin_mod
-		&& (field_name == 'msg' || field_name == 'code') {
-		method := c.table.find_method(sym, field_name) or {
-			c.error('invalid `IError` interface implementation: ${err}', node.pos)
-			return ast.void_type
-		}
-		c.note('the `.${field_name}` field on `IError` is deprecated, and will be removed after 2022-06-01, use `.${field_name}()` instead.',
-			node.pos)
-		return method.return_type
-	}
-	// <<<
 
 	if has_field {
 		is_used_outside := sym.mod != c.mod
@@ -1764,7 +1738,7 @@ fn (mut c Checker) const_decl(mut node ast.ConstDecl) {
 			node.pos)
 	}
 	for mut field in node.fields {
-		if checker.reserved_type_names_chk.matches(util.no_cur_mod(field.name, c.mod)) {
+		if reserved_type_names_chk.matches(util.no_cur_mod(field.name, c.mod)) {
 			c.error('invalid use of reserved type `${field.name}` as a const name', field.pos)
 		}
 		// TODO: Check const name once the syntax is decided
@@ -1839,7 +1813,7 @@ fn (mut c Checker) const_decl(mut node ast.ConstDecl) {
 
 fn (mut c Checker) enum_decl(mut node ast.EnumDecl) {
 	c.check_valid_pascal_case(node.name, 'enum name', node.pos)
-	if node.typ == ast.invalid_type_idx {
+	if node.typ == ast.invalid_type {
 		c.error('cannot register enum `${node.name}`, another type with this name exists',
 			node.pos)
 		return
@@ -2001,6 +1975,7 @@ fn (mut c Checker) enum_decl(mut node ast.EnumDecl) {
 							field.pos)
 					} else if !c.pref.translated && !c.file.is_translated && !node.is_multi_allowed
 						&& ilast + 1 in iseen {
+						c.add_error_detail('use `@[_allow_multiple_values]` attribute to allow multiple enum values. Use only when it is needed')
 						c.error('enum value `${ilast + 1}` already exists', field.pos)
 					}
 					iseen << ilast + 1
@@ -2015,6 +1990,7 @@ fn (mut c Checker) enum_decl(mut node ast.EnumDecl) {
 							field.pos)
 					} else if !c.pref.translated && !c.file.is_translated && !node.is_multi_allowed
 						&& ulast + 1 in useen {
+						c.add_error_detail('use `@[_allow_multiple_values]` attribute to allow multiple enum values. Use only when it is needed')
 						c.error('enum value `${ulast + 1}` already exists', field.pos)
 					}
 					useen << ulast + 1
@@ -2064,6 +2040,7 @@ fn (mut c Checker) check_enum_field_integer_literal(expr ast.IntegerLiteral, is_
 	}
 	if !overflows && !c.pref.translated && !c.file.is_translated && !is_multi_allowed {
 		if (is_signed && ival in iseen) || (!is_signed && uval in useen) {
+			c.add_error_detail('use `@[_allow_multiple_values]` attribute to allow multiple enum values. Use only when it is needed')
 			c.error('enum value `${expr.val}` already exists', pos)
 		}
 	}
@@ -2630,6 +2607,9 @@ fn (mut c Checker) hash_stmt(mut node ast.HashStmt) {
 }
 
 fn (mut c Checker) import_stmt(node ast.Import) {
+	if node.mod == 'x.vweb' {
+		println('`x.vweb` is now `veb`. The module is no longer experimental. Simply `import veb` instead of `import x.vweb`.')
+	}
 	c.check_valid_snake_case(node.alias, 'module alias', node.pos)
 	for sym in node.syms {
 		name := '${node.mod}.${sym.name}'
@@ -2683,7 +2663,7 @@ fn (mut c Checker) stmts_ending_with_expression(mut stmts []ast.Stmt, expected_o
 		c.scope_returns = false
 		return
 	}
-	if c.stmt_level > checker.stmt_level_cutoff_limit {
+	if c.stmt_level > stmt_level_cutoff_limit {
 		c.scope_returns = false
 		c.error('checker: too many stmt levels: ${c.stmt_level} ', stmts[0].pos)
 		return
@@ -2749,7 +2729,7 @@ pub fn (mut c Checker) expr(mut node ast.Expr) ast.Type {
 		c.expr_level--
 	}
 
-	if c.expr_level > checker.expr_level_cutoff_limit {
+	if c.expr_level > expr_level_cutoff_limit {
 		c.error('checker: too many expr levels: ${c.expr_level} ', node.pos())
 		return ast.void_type
 	}
@@ -3108,6 +3088,9 @@ pub fn (mut c Checker) expr(mut node ast.Expr) ast.Type {
 				&& c.table.cur_fn.generic_names.len == 0 {
 				c.error('unexpected generic variable in non-generic function `${c.table.cur_fn.name}`',
 					node.pos)
+			} else if node.stmt != ast.empty_stmt && node.typ == ast.void_type {
+				c.stmt(mut node.stmt)
+				node.typ = c.table.find_type_idx((node.stmt as ast.StructDecl).name)
 			}
 			return node.typ
 		}
@@ -3662,6 +3645,15 @@ fn (mut c Checker) at_expr(mut node ast.AtExpr) ast.Type {
 				''
 			}
 			node.val = hash
+		}
+		.build_date {
+			node.val = util.stable_build_time.strftime('%Y-%m-%d')
+		}
+		.build_time {
+			node.val = util.stable_build_time.strftime('%H:%M:%S')
+		}
+		.build_timestamp {
+			node.val = util.stable_build_time.unix().str()
 		}
 		.unknown {
 			c.error('unknown @ identifier: ${node.name}. Available identifiers: ${token.valid_at_tokens}',
@@ -4954,7 +4946,7 @@ fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos toke
 	defer {
 		c.ensure_generic_type_level--
 	}
-	if c.ensure_generic_type_level > checker.expr_level_cutoff_limit {
+	if c.ensure_generic_type_level > expr_level_cutoff_limit {
 		c.error('checker: too many levels of Checker.ensure_generic_type_specify_type_names calls: ${c.ensure_generic_type_level} ',
 			pos)
 		return false
@@ -5038,7 +5030,7 @@ fn (mut c Checker) ensure_type_exists(typ ast.Type, pos token.Pos) bool {
 	defer {
 		c.type_level--
 	}
-	if c.type_level > checker.type_level_cutoff_limit {
+	if c.type_level > type_level_cutoff_limit {
 		c.error('checker: too many levels of Checker.ensure_type_exists calls: ${c.type_level}, probably due to a self referencing type',
 			pos)
 		return false

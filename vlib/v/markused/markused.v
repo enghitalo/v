@@ -306,6 +306,7 @@ pub fn mark_used(mut table ast.Table, mut pref_ pref.Preferences, ast_files []&a
 
 	handle_vweb(mut table, mut all_fn_root_names, 'vweb.Result', 'vweb.filter', 'vweb.Context')
 	handle_vweb(mut table, mut all_fn_root_names, 'x.vweb.Result', 'x.vweb.filter', 'x.vweb.Context')
+	handle_vweb(mut table, mut all_fn_root_names, 'veb.Result', 'veb.filter', 'veb.Context')
 
 	// handle ORM drivers:
 	orm_connection_implementations := table.iface_types['orm.Connection'] or { []ast.Type{} }
@@ -446,9 +447,9 @@ fn handle_vweb(mut table ast.Table, mut all_fn_root_names []string, result_name 
 	result_type_idx := table.find_type_idx(result_name)
 	if result_type_idx != 0 {
 		all_fn_root_names << filter_name
-		typ_vweb_context := ast.Type(table.find_type_idx(context_name)).set_nr_muls(1)
+		typ_vweb_context := ast.idx_to_type(table.find_type_idx(context_name)).set_nr_muls(1)
 		all_fn_root_names << '${int(typ_vweb_context)}.html'
-		for vgt in table.used_vweb_types {
+		for vgt in table.used_veb_types {
 			sym_app := table.sym(vgt)
 			for m in sym_app.methods {
 				mut skip := true

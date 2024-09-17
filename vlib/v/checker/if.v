@@ -67,6 +67,7 @@ fn (mut c Checker) if_expr(mut node ast.IfExpr) ast.Type {
 				cond_typ := c.table.unaliased_type(c.unwrap_generic(c.expr(mut branch.cond)))
 				if (cond_typ.idx() != ast.bool_type_idx || cond_typ.has_flag(.option)
 					|| cond_typ.has_flag(.result)) && !c.pref.translated && !c.file.is_translated {
+					//&& cond_typ.idx() != ast.void_type_idx { TODO bring back after the void split
 					c.error('non-bool type `${c.table.type_to_str(cond_typ)}` used as if condition',
 						branch.cond.pos())
 				}
@@ -283,14 +284,14 @@ fn (mut c Checker) if_expr(mut node ast.IfExpr) ast.Type {
 									is_comptime_type_is_expr = true
 									match branch.cond.op {
 										.eq {
-											skip_state = if c.comptime.comptime_for_method == right.val.str() {
+											skip_state = if c.comptime.comptime_for_method.name == right.val.str() {
 												ComptimeBranchSkipState.eval
 											} else {
 												ComptimeBranchSkipState.skip
 											}
 										}
 										.ne {
-											skip_state = if c.comptime.comptime_for_method == right.val.str() {
+											skip_state = if c.comptime.comptime_for_method.name == right.val.str() {
 												ComptimeBranchSkipState.skip
 											} else {
 												ComptimeBranchSkipState.eval
@@ -569,15 +570,15 @@ fn (mut c Checker) smartcast_if_conds(mut node ast.Expr, mut scope ast.Scope) {
 						c.comptime.type_map['${c.comptime.comptime_for_variant_var}.typ']
 					} else {
 						c.error('invalid type `${right_expr}`', right_expr.pos)
-						ast.Type(0)
+						ast.no_type
 					}
 				}
 				else {
 					c.error('invalid type `${right_expr}`', right_expr.pos())
-					ast.Type(0)
+					ast.no_type
 				}
 			}
-			if right_type != ast.Type(0) {
+			if right_type != ast.no_type {
 				right_sym := c.table.sym(right_type)
 				mut expr_type := c.unwrap_generic(node.left_type)
 				left_sym := c.table.sym(expr_type)

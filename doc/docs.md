@@ -21,13 +21,14 @@ Anything you can do in other languages, you can do in V.
 
 The best way to get the latest and greatest V, is to install it from source.
 It is easy, and it takes only a few seconds:
-
 ```bash
 git clone https://github.com/vlang/v
 cd v
 make
-# HINT: Using Windows?: run make.bat in the cmd.exe shell
 ```
+
+Note: If you are on windows, outside of WSL, run `make.bat` instead of `make`, in a CMD shell.
+Note: On Ubuntu/Debian, you may need to run `sudo apt install git build-essential make` first.
 
 For more details, see the
 [Installing V](https://github.com/vlang/v/blob/master/README.md#installing-v-from-source)
@@ -87,6 +88,8 @@ by using any of the following commands in a terminal:
     * [Module import aliasing](#module-import-aliasing)
 * [Statements & expressions](#statements--expressions)
     * [If](#if)
+        * [`If` expressions](#if-expressions)
+        * [`If` unwrapping](#if-unwrapping)
     * [Match](#match)
     * [In operator](#in-operator)
     * [For loop](#for-loop)
@@ -683,7 +686,9 @@ To use a format specifier, follow this pattern:
   > doesn't need `+` to right-align since that's the default.
 - width: may be an integer value describing the minimum width of total field to output.
 - precision: an integer value preceded by a `.` will guarantee that many digits after the decimal
-  point, if the input variable is a float. Ignored if variable is an integer.
+  point without any insignificant trailing zeros. If displaying insignificant zero's is desired,
+  append a `f` specifier to the precision value (see examples below). Applies only to float
+  variables and is ignored for integer variables.
 - type: `f` and `F` specify the input is a float and should be rendered as such, `e` and `E` specify
   the input is a float and should be rendered as an exponent (partially broken), `g` and `G` specify
   the input is a float--the renderer will use floating point notation for small values and exponent
@@ -1629,8 +1634,13 @@ if a < b {
 Unlike other C-like languages,
 there are no parentheses surrounding the condition and the braces are always required.
 
-`if` can be used as an expression:
+#### `If` expressions
+Unlike C, V does not have a ternary operator, that would allow you to do: `x = c ? 1 : 2` .
+Instead, it has a bit more verbose, but also clearer to read, ability to use `if` as an
+expression. The direct translation in V of the ternary construct above, assuming `c` is a
+boolean condition, would be: `x = if c { 1 } else { 2 }`.
 
+Here is another example:
 ```v
 num := 777
 s := if num % 2 == 0 { 'even' } else { 'odd' }
@@ -1638,6 +1648,21 @@ println(s)
 // "odd"
 ```
 
+You can use multiple statements in each of the branches of an `if` expression, followed by a final
+value, that will become the value of the entire `if` expression, when it takes that branch:
+```v
+n := arguments().len
+x := if n > 2 {
+	dump(arguments())
+	42
+} else {
+	println('something else')
+	100
+}
+dump(x)
+```
+
+#### `If` unwrapping
 Anywhere you can use `or {}`, you can also use "if unwrapping". This binds the unwrapped value
 of an expression to a variable when that expression is not none nor an error.
 
@@ -3087,7 +3112,7 @@ module mymodule
 pub const golden_ratio = 1.61803
 
 fn calc() {
-	println(mymodule.golden_ratio)
+	println(golden_ratio)
 }
 ```
 
@@ -3573,7 +3598,6 @@ fn main() {
 #### Implement an interface
 
 A type implements an interface by implementing its methods and fields.
-There is no explicit declaration of intent, no "implements" keyword.
 
 An interface can have a `mut:` section. Implementing types will need
 to have a `mut` receiver, for methods declared in the `mut:` section
@@ -3618,6 +3642,30 @@ fn fn1(s Foo) {
 // fn fn2(s Bar) { // does not match
 //      println(s.write('Foo'))
 // }
+```
+
+There is an **optional** `implements` keyword for explicit declaration
+of intent, which applies to `struct` declarations.
+
+```v
+struct PathError implements IError {
+	Error
+	path string
+}
+
+fn (err PathError) msg() string {
+	return 'Failed to open path: ${err.path}'
+}
+
+fn try_open(path string) ! {
+	return PathError{
+		path: path
+	}
+}
+
+fn main() {
+	try_open('/tmp') or { panic(err) }
+}
 ```
 
 #### Casting an interface
@@ -3723,7 +3771,7 @@ struct Dog {}
 fn main() {
 	cat := Cat{}
 	assert dump(cat.speak()) == 'meow!'
-	//
+
 	a := Adoptable(cat)
 	assert dump(a.speak()) == 'adopt me!' // call Adoptable's `speak`
 	if a is Cat {
@@ -3732,7 +3780,7 @@ fn main() {
 		// Cat `speak`, NOT the Adoptable `speak`:
 		dump(a.speak()) // meow!
 	}
-	//
+
 	b := Adoptable(Dog{})
 	assert dump(b.speak()) == 'adopt me!' // call Adoptable's `speak`
 	// if b is Dog {
@@ -4010,6 +4058,20 @@ to the `error()` function.
 user := repo.find_user_by_id(7) or {
 	println(err) // "User 7 not found"
 	return
+}
+```
+
+#### Options/results when returning multiple values
+
+Only one `Option` or `Result` is allowed to be returned from a function. It is
+possible to return multiple values and still signal an error.
+
+```v
+fn multireturn(v int) !(int, int) {
+	if v < 0 {
+		return error('must be positive')
+	}
+	return v, v * v
 }
 ```
 
@@ -4812,7 +4874,7 @@ Just as the compiler frees C data types with C's `free()`, it will statically in
 Autofree can be enabled with an `-autofree` flag.
 
 For developers willing to have more low level control, autofree can be disabled with
-`-manualfree`, or by adding a `[manualfree]` on each function that wants manage its
+`-manualfree`, or by adding a `[manualfree]` on each function that wants to manage its
 memory manually. (See [attributes](#attributes)).
 
 > [!NOTE]
@@ -4924,7 +4986,7 @@ Here `a` is stored on the stack since its address never leaves the function `f()
 However a reference to `b` is part of `e` which is returned. Also a reference to
 `c` is returned. For this reason `b` and `c` will be heap allocated.
 
-Things become less obvious when a reference to an object is passed as function argument:
+Things become less obvious when a reference to an object is passed as a function argument:
 
 ```v
 struct MyStruct {
@@ -5570,6 +5632,40 @@ fn main() {
 }
 ```
 
+```v
+// @[_allow_multiple_values] allows an enum to have multiple duplicate values.
+// Use it carefully, only when you really need it.
+
+@[_allow_multiple_values]
+enum ButtonStyle {
+	primary   = 1
+	secondary = 2
+	success   = 3
+
+	blurple = 1
+	grey    = 2
+	gray    = 2
+	green   = 3
+}
+
+fn main() {
+	assert int(ButtonStyle.primary) == 1
+	assert int(ButtonStyle.blurple) == 1
+
+	assert int(ButtonStyle.secondary) == 2
+	assert int(ButtonStyle.gray) == 2
+	assert int(ButtonStyle.grey) == 2
+
+	assert int(ButtonStyle.success) == 3
+	assert int(ButtonStyle.green) == 3
+
+	assert ButtonStyle.primary == ButtonStyle.blurple
+	assert ButtonStyle.secondary == ButtonStyle.grey
+	assert ButtonStyle.secondary == ButtonStyle.gray
+	assert ButtonStyle.success == ButtonStyle.green
+}
+```
+
 Struct field deprecations:
 
 ```v oksyntax
@@ -5789,8 +5885,19 @@ that are substituted at compile time:
   next to the nearest v.mod file (as a string).
 - `@VMODROOT` => will be substituted with the *folder*,
   where the nearest v.mod file is (as a string).
+- `@BUILD_DATE` => replaced with the build date, for example '2024-09-13' .
+- `@BUILD_TIME` => replaced with the build time, for example '12:32:07' .
+- `@BUILD_TIMESTAMP` => replaced with the build timestamp, for example '1726219885' .
+Note: `@BUILD_DATE`, `@BUILD_TIME`, `@BUILD_TIMESTAMP` represent times in the UTC timezone.
+By default, they are based on the current time of the compilation/build. They can be overriden
+by setting the environment variable `SOURCE_DATE_EPOCH`. That is also useful while making
+releases, since you can use the equivalent of this in your build system/script:
+`export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) ;` , and then use `@BUILD_DATE` etc.,
+inside your program, when you for example print your version information to users.
+See also https://reproducible-builds.org/docs/source-date-epoch/ .
 
-That allows you to do the following example, useful while debugging/logging/tracing your code:
+The compile time pseudo variables allow you to do the following
+example, which is useful while debugging/logging/tracing your code:
 
 ```v
 eprintln(@LOCATION)
@@ -5807,6 +5914,13 @@ eprintln('${vm.name} ${vm.version}\n ${vm.description}')
 A program that prints its own source code (a quine):
 ```v
 print($embed_file(@FILE).to_string())
+```
+
+A program that prints the time when it was built:
+```v
+import time
+
+println('This program, was compiled at ${time.unix(@BUILD_TIMESTAMP.i64()).format_ss_milli()} .')
 ```
 
 > [!NOTE]
@@ -6686,15 +6800,16 @@ performance, memory usage, or size.
 
 | Tuning Operation         | Benefits                        | Drawbacks                                         |
 |--------------------------|---------------------------------|---------------------------------------------------|
-| `@[inline]`               | Performance                     | Increased executable size                         |
-| `@[direct_array_access]`  | Performance                     | Safety risks                                      |
-| `@[packed]`               | Memory usage                    | Potential performance loss                        |
-| `@[minify]`               | Performance, Memory usage       | May break binary serialization/reflection         |
+| `@[inline]`              | Performance                     | Increased executable size                         |
+| `@[direct_array_access]` | Performance                     | Safety risks                                      |
+| `@[packed]`              | Memory usage                    | Potential performance loss                        |
+| `@[minify]`              | Performance, Memory usage       | May break binary serialization/reflection         |
 | `_likely_/_unlikely_`    | Performance                     | Risk of negative performance impact               |
 | `-skip-unused`           | Performance, Compile time, Size | Potential instability                             |
 | `-fast-math`             | Performance                     | Risk of incorrect mathematical operations results |
 | `-d no_segfault_handler` | Compile time, Size              | Loss of segfault trace                            |
 | `-cflags -march=native`  | Performance                     | Risk of reduced CPU compatibility                 |
+| `-compress`              | Size                            | Harder to debug, extra dependency `upx`           |
 | `PGO`                    | Performance, Size               | Usage complexity                                  |
 
 ### Tuning operations details
@@ -6880,6 +6995,28 @@ with identical hardware.
 **When to Avoid**
 
 - When distributing the software to users with potentially older CPUs.
+
+#### `-compress`
+
+This flag executes `upx` to compress the resultant executable, reducing its size by around 50%-70%.
+The executable will be uncompressed at runtime, so it will take a bit more time to start.
+It will also take extra RAM initially, as the compressed version of the app will be loaded into
+memory, and then expanded to another chunk of memory.
+Debugging such an application can be a bit harder, if you do not account for it.
+Some antivirus programs also use heuristics, that trigger more often for compressed applications.
+
+**When to Use**
+
+- For really tiny environments, where the size of the executable on the file system,
+or when deploying is important (docker containers, rescue disks etc).
+
+**When to Avoid**
+
+- When you need to debug the application
+- When the app's startup time is extremely important (where 1-2ms can be meaningful for you)
+- When you can not afford to allocate more memory during application startup
+- When you are deploying an app to users with antivirus software that could misidentify your
+app as malicious, just because it decompresses its code at runtime.
 
 #### PGO (Profile-Guided Optimization)
 
@@ -7328,7 +7465,7 @@ fn main() {
 	nr_users := C.sqlite3_column_int(stmt, 0)
 	C.sqlite3_finalize(stmt)
 	println('There are ${nr_users} users in the database.')
-	//
+
 	error_msg := &char(0)
 	query_all_users := 'select * from users'
 	rc := C.sqlite3_exec(db, &char(query_all_users.str), my_callback, voidptr(7), &error_msg)

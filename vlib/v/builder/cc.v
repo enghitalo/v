@@ -41,7 +41,7 @@ fn (mut v Builder) post_process_c_compiler_output(ccompiler string, res os.Resul
 		}
 		return
 	}
-	for emsg_marker in [builder.c_verror_message_marker, 'error: include file '] {
+	for emsg_marker in [c_verror_message_marker, 'error: include file '] {
 		if res.output.contains(emsg_marker) {
 			emessage := res.output.all_after(emsg_marker).all_before('\n').all_before('\r').trim_right('\r\n')
 			verror(emessage)
@@ -315,8 +315,8 @@ fn (mut v Builder) setup_ccompiler_options(ccompiler string) {
 		ccoptions.args << '-Wl,--export-all'
 		ccoptions.args << '-Wl,--no-entry'
 	}
-	if ccoptions.debug_mode && builder.current_os != 'windows' && v.pref.build_mode != .build_module {
-		if ccoptions.cc != .tcc && builder.current_os == 'macos' {
+	if ccoptions.debug_mode && current_os != 'windows' && v.pref.build_mode != .build_module {
+		if ccoptions.cc != .tcc && current_os == 'macos' {
 			ccoptions.linker_flags << '-Wl,-export_dynamic' // clang for mac needs export_dynamic instead of -rdynamic
 		} else {
 			ccoptions.linker_flags << '-rdynamic' // needed for nicer symbolic backtraces
@@ -331,6 +331,12 @@ fn (mut v Builder) setup_ccompiler_options(ccompiler string) {
 			// /usr/include/runetype.h:94: error: ';' expected (got "const")
 			ccoptions.args << '-D__RUNETYPE_INTERNAL'
 		}
+	}
+
+	// Fix 'braces around scalar initializer' errors
+	// on OpenBSD with clang for cstrict mode
+	if v.pref.os == .openbsd && ccoptions.cc == .clang {
+		ccoptions.wargs << '-Wno-braced-scalar-init'
 	}
 
 	if ccompiler != 'msvc' && v.pref.os != .freebsd {
@@ -432,9 +438,9 @@ fn (mut v Builder) setup_ccompiler_options(ccompiler string) {
 	}
 	if !v.pref.no_std {
 		if v.pref.os == .linux {
-			ccoptions.source_args << '-std=${builder.c_std_gnu}'
+			ccoptions.source_args << '-std=${c_std_gnu}'
 		} else {
-			ccoptions.source_args << '-std=${builder.c_std}'
+			ccoptions.source_args << '-std=${c_std}'
 		}
 		ccoptions.source_args << '-D_DEFAULT_SOURCE'
 	}
@@ -493,15 +499,15 @@ fn (v &Builder) thirdparty_object_args(ccoptions CcompilerOptions, middle []stri
 	if !v.pref.no_std {
 		if v.pref.os == .linux {
 			if cpp_file {
-				all << '-std=${builder.cpp_std_gnu}'
+				all << '-std=${cpp_std_gnu}'
 			} else {
-				all << '-std=${builder.c_std_gnu}'
+				all << '-std=${c_std_gnu}'
 			}
 		} else {
 			if cpp_file {
-				all << '-std=${builder.cpp_std}'
+				all << '-std=${cpp_std}'
 			} else {
-				all << '-std=${builder.c_std}'
+				all << '-std=${c_std}'
 			}
 		}
 		all << '-D_DEFAULT_SOURCE'
@@ -995,8 +1001,8 @@ fn (mut c Builder) cc_windows_cross() {
 	} else {
 		args << cflags.c_options_after_target()
 	}
-	if builder.current_os !in ['macos', 'linux', 'termux'] {
-		println(builder.current_os)
+	if current_os !in ['macos', 'linux', 'termux'] {
+		println(current_os)
 		panic('your platform is not supported yet')
 	}
 
@@ -1106,6 +1112,9 @@ fn (mut v Builder) build_thirdparty_obj_file(mod string, path string, moduleflag
 	}
 	v.pref.cache_manager.mod_save(mod, '.description.txt', obj_path, '${obj_path:-30} @ ${cmd}\n') or {
 		panic(err)
+	}
+	if v.pref.show_cc {
+		println('>> OBJECT FILE compilation cmd: ${cmd}')
 	}
 	$if trace_thirdparty_obj_files ? {
 		if res.output != '' {

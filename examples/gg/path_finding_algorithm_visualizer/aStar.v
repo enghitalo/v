@@ -329,13 +329,13 @@ fn astar_path_finding(mut app App, mut grid [][]Cell, start Point, end Point) {
 
 	g_score[start.x][start.y] = 0
 	f_score[start.x][start.y] = g_score[start.x][start.y] + hf(start, end)
-	priority_queue.insert(&Node{
+	priority_queue.insert(Node{
 		f_score: f_score[start.x][start.y]
 		cell:    &Point{
 			x: start.x
 			y: start.y
 		}
-		count: 0
+		count:   0
 	})
 
 	for priority_queue.len() > 0 {
@@ -360,7 +360,7 @@ fn astar_path_finding(mut app App, mut grid [][]Cell, start Point, end Point) {
 			if temp_g_score < g_score[neighbor.x][neighbor.y] {
 				g_score[neighbor.x][neighbor.y] = temp_g_score
 				if !(neighbor.x == start.x && neighbor.y == start.y) {
-					priority_queue.insert(&Node{
+					priority_queue.insert(Node{
 						f_score: g_score[neighbor.x][neighbor.y] + hf(neighbor, end)
 						cell:    neighbor
 						count:   curr_node.count + 1

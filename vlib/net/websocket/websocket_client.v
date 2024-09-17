@@ -92,13 +92,13 @@ pub:
 pub fn new_client(address string, opt ClientOpt) !&Client {
 	uri := parse_uri(address)!
 	return &Client{
-		conn:         unsafe { nil }
-		is_server:    false
-		ssl_conn:     ssl.new_ssl_conn()!
-		is_ssl:       address.starts_with('wss')
-		logger:       opt.logger
-		uri:          uri
-		client_state: ClientState{
+		conn:          unsafe { nil }
+		is_server:     false
+		ssl_conn:      ssl.new_ssl_conn()!
+		is_ssl:        address.starts_with('wss')
+		logger:        opt.logger
+		uri:           uri
+		client_state:  ClientState{
 			state: .closed
 		}
 		id:            rand.uuid_v4()
@@ -368,7 +368,7 @@ fn (mut ws Client) send_control_frame(code OPCode, frame_typ string, payload []u
 	header_len := if ws.is_server { 2 } else { 6 }
 	frame_len := header_len + payload.len
 	mut control_frame := []u8{len: frame_len}
-	mut masking_key := if !ws.is_server { create_masking_key() } else { websocket.empty_bytearr }
+	mut masking_key := if !ws.is_server { create_masking_key() } else { empty_bytearr }
 	defer {
 		unsafe {
 			control_frame.free()

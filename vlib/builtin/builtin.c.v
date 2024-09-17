@@ -116,12 +116,14 @@ pub fn panic_result_not_set(s string) {
 // It also shows a backtrace on most platforms.
 @[noreturn]
 pub fn panic(s string) {
+	// Note: be careful to not use string interpolation here:
 	$if freestanding {
 		bare_panic(s)
 	} $else {
 		eprint('V panic: ')
 		eprintln(s)
-		eprintln('v hash: ${@VCURRENTHASH}')
+		eprint('v hash: ')
+		eprintln(@VCURRENTHASH)
 		$if native {
 			C.exit(1) // TODO: native backtraces
 		} $else $if exit_after_panic_message ? {
@@ -155,7 +157,7 @@ pub fn panic(s string) {
 pub fn c_error_number_str(errnum int) string {
 	mut err_msg := ''
 	$if freestanding {
-		err_msg = 'error ${errnum}'
+		err_msg = 'error ' + errnum.str()
 	} $else {
 		$if !vinix {
 			c_msg := C.strerror(errnum)
@@ -181,6 +183,10 @@ pub fn eprintln(s string) {
 		eprintln('eprintln(NIL)')
 		return
 	}
+	$if builtin_print_use_fprintf ? {
+		C.fprintf(C.stderr, c'%.*s\n', s.len, s.str)
+		return
+	}
 	$if freestanding {
 		// flushing is only a thing with C.FILE from stdio.h, not on the syscall level
 		bare_eprint(s.str, u64(s.len))
@@ -203,6 +209,10 @@ pub fn eprintln(s string) {
 pub fn eprint(s string) {
 	if s.str == 0 {
 		eprint('eprint(NIL)')
+		return
+	}
+	$if builtin_print_use_fprintf ? {
+		C.fprintf(C.stderr, c'%.*s', s.len, s.str)
 		return
 	}
 	$if freestanding {
@@ -267,6 +277,10 @@ pub fn unbuffer_stdout() {
 // print prints a message to stdout. Note that unlike `eprint`, stdout is not automatically flushed.
 @[manualfree]
 pub fn print(s string) {
+	$if builtin_print_use_fprintf ? {
+		C.fprintf(C.stdout, c'%.*s', s.len, s.str)
+		return
+	}
 	$if android && !termux {
 		C.android_print(C.stdout, c'%.*s\n', s.len, s.str)
 	} $else $if ios {
@@ -287,6 +301,10 @@ pub fn println(s string) {
 		return
 	}
 	$if noprintln ? {
+		return
+	}
+	$if builtin_print_use_fprintf ? {
+		C.fprintf(C.stdout, c'%.*s\n', s.len, s.str)
 		return
 	}
 	$if android && !termux {
@@ -483,7 +501,7 @@ pub fn malloc_uncollectable(n isize) &u8 {
 
 // v_realloc resizes the memory block `b` with `n` bytes.
 // The `b byteptr` must be a pointer to an existing memory block
-// previously allocated with `malloc`, `v_calloc` or `vcalloc`.
+// previously allocated with `malloc` or `vcalloc`.
 // Please, see also realloc_data, and use it instead if possible.
 @[unsafe]
 pub fn v_realloc(b &u8, n isize) &u8 {
@@ -510,7 +528,7 @@ pub fn v_realloc(b &u8, n isize) &u8 {
 
 // realloc_data resizes the memory block pointed by `old_data` to `new_size`
 // bytes. `old_data` must be a pointer to an existing memory block, previously
-// allocated with `malloc`, `v_calloc` or `vcalloc`, of size `old_data`.
+// allocated with `malloc` or `vcalloc`, of size `old_data`.
 // realloc_data returns a pointer to the new location of the block.
 // Note: if you know the old data size, it is preferable to call `realloc_data`,
 // instead of `v_realloc`, at least during development, because `realloc_data`
@@ -556,7 +574,7 @@ pub fn realloc_data(old_data &u8, old_size int, new_size int) &u8 {
 
 // vcalloc dynamically allocates a zeroed `n` bytes block of memory on the heap.
 // vcalloc returns a `byteptr` pointing to the memory address of the allocated space.
-// Unlike `v_calloc` vcalloc checks for negative values given in `n`.
+// vcalloc checks for negative values given in `n`.
 pub fn vcalloc(n isize) &u8 {
 	$if trace_vcalloc ? {
 		total_m += n

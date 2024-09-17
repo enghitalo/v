@@ -15,9 +15,17 @@ import strings
 import v.pref
 import v.token
 
-pub type Type = int
+pub type Type = u32
 
-pub type TypeInfo = Aggregate
+@[inline]
+pub fn idx_to_type(idx int) Type {
+	return Type(u32(idx))
+}
+
+pub struct UnknownTypeInfo {}
+
+pub type TypeInfo = UnknownTypeInfo
+	| Aggregate
 	| Alias
 	| Array
 	| ArrayFixed
@@ -107,13 +115,13 @@ pub mut:
 }
 
 // max of 8
-pub enum TypeFlag {
-	option
-	result
-	variadic
-	generic
-	shared_f
-	atomic_f
+pub enum TypeFlag as u32 {
+	option   = 1 << 24
+	result   = 1 << 25
+	variadic = 1 << 26
+	generic  = 1 << 27
+	shared_f = 1 << 28
+	atomic_f = 1 << 29
 }
 
 /*
@@ -266,11 +274,11 @@ pub mut:
 pub fn (t Type) atomic_typename() string {
 	idx := t.idx()
 	match idx {
-		ast.u32_type_idx { return 'atomic_uint' }
-		ast.int_type_idx { return '_Atomic int' }
-		ast.i32_type_idx { return '_Atomic int' }
-		ast.u64_type_idx { return 'atomic_ullong' }
-		ast.i64_type_idx { return 'atomic_llong' }
+		u32_type_idx { return 'atomic_uint' }
+		int_type_idx { return '_Atomic int' }
+		i32_type_idx { return '_Atomic int' }
+		u64_type_idx { return 'atomic_ullong' }
+		i64_type_idx { return 'atomic_llong' }
 		else { return 'unknown_atomic' }
 	}
 }
@@ -292,19 +300,19 @@ pub fn (t Type) idx() int {
 // is_void return true if `t` is of type `void`
 @[inline]
 pub fn (t Type) is_void() bool {
-	return t == ast.void_type
+	return t == void_type
 }
 
 // is_full return true if `t` is not of type `void`
 @[inline]
 pub fn (t Type) is_full() bool {
-	return t != 0 && t != ast.void_type
+	return t != 0 && t != void_type
 }
 
 // return nr_muls for `t`
 @[inline]
 pub fn (t Type) nr_muls() int {
-	return (int(t) >> 16) & 0xff
+	return (t >> 16) & 0xff
 }
 
 // return true if `t` is a pointer (nr_muls>0)
@@ -312,26 +320,26 @@ pub fn (t Type) nr_muls() int {
 pub fn (t Type) is_ptr() bool {
 	// any normal pointer, i.e. &Type, &&Type etc;
 	// Note: voidptr, charptr and byteptr are NOT included!
-	return (int(t) >> 16) & 0xff != 0
+	return (t >> 16) & 0xff != 0
 }
 
 // is_pointer returns true if `typ` is any of the builtin pointer types (voidptr, byteptr, charptr)
 @[inline]
 pub fn (typ Type) is_pointer() bool {
 	// builtin pointer types (voidptr, byteptr, charptr)
-	return typ.idx() in ast.pointer_type_idxs
+	return typ.idx() in pointer_type_idxs
 }
 
 // is_voidptr returns true if `typ` is a voidptr
 @[inline]
 pub fn (typ Type) is_voidptr() bool {
-	return typ.idx() == ast.voidptr_type_idx
+	return typ.idx() == voidptr_type_idx
 }
 
 // is_any_kind_of_pointer returns true if t is any type of pointer
 @[inline]
 pub fn (t Type) is_any_kind_of_pointer() bool {
-	return (int(t) >> 16) & 0xff != 0 || (u16(t) & 0xffff) in ast.pointer_type_idxs
+	return (t >> 16) & 0xff != 0 || (u16(t) & 0xffff) in pointer_type_idxs
 }
 
 // set nr_muls on `t` and return it
@@ -340,50 +348,56 @@ pub fn (t Type) set_nr_muls(nr_muls int) Type {
 	if nr_muls < 0 || nr_muls > 255 {
 		panic('set_nr_muls: nr_muls must be between 0 & 255')
 	}
-	return int(t) & 0xff00ffff | int(u32(nr_muls) << 16)
+	return t & 0xff00ffff | u32(nr_muls) << 16
 }
 
 // increments nr_muls on `t` and return it
 @[inline]
 pub fn (t Type) ref() Type {
-	nr_muls := (int(t) >> 16) & 0xff
+	nr_muls := (t >> 16) & 0xff
 	if nr_muls == 255 {
 		panic('ref: nr_muls is already at max of 255')
 	}
-	return int(t) & 0xff00ffff | int(u32(nr_muls + 1) << 16)
+	return t & 0xff00ffff | (nr_muls + 1) << 16
 }
 
 // decrement nr_muls on `t` and return it
 @[inline]
 pub fn (t Type) deref() Type {
-	nr_muls := (int(t) >> 16) & 0xff
+	nr_muls := (t >> 16) & 0xff
 	if nr_muls == 0 {
 		panic('deref: type `${t}` is not a pointer')
 	}
-	return int(t) & 0xff00ffff | int(u32(nr_muls - 1) << 16)
+	return t & 0xff00ffff | (nr_muls - 1) << 16
 }
 
-// set `flag` on `t` and return `t`
+// has_flag returns whether the given named `flag` is set
+@[inline]
+pub fn (t Type) has_flag(flag TypeFlag) bool {
+	return (t & u32(flag)) != 0
+}
+
+// set_flag returns a new type, that is like the input `t`, but with the named `flag` set
 @[inline]
 pub fn (t Type) set_flag(flag TypeFlag) Type {
-	return int(t) | (1 << (int(flag) + 24))
+	return t | u32(flag)
 }
 
-// clear `flag` on `t` and return `t`
+// clear_flag returns a new type, that is like `t`, but with the named `flag` cleared
 @[inline]
 pub fn (t Type) clear_flag(flag TypeFlag) Type {
-	return int(t) & ~(1 << (int(flag) + 24))
+	return t & ~(u32(flag))
 }
 
-// clear all flags or multi flags
+// clear_flags returns a new type, based on `t`, but with cleared named `flags`
 @[inline]
 pub fn (t Type) clear_flags(flags ...TypeFlag) Type {
 	if flags.len == 0 {
-		return int(t) & 0xffffff
+		return t & 0xffffff
 	} else {
 		mut typ := int(t)
 		for flag in flags {
-			typ = typ & ~(1 << (int(flag) + 24))
+			typ = typ & ~(u32(flag))
 		}
 		return typ
 	}
@@ -392,18 +406,12 @@ pub fn (t Type) clear_flags(flags ...TypeFlag) Type {
 // clear option and result flags
 @[inline]
 pub fn (t Type) clear_option_and_result() Type {
-	return u32(t) & ~0x0300_0000
-}
-
-// return true if `flag` is set on `t`
-@[inline]
-pub fn (t Type) has_flag(flag TypeFlag) bool {
-	return int(t) & (1 << (int(flag) + 24)) != 0
+	return t & ~0x0300_0000
 }
 
 @[inline]
 pub fn (t Type) has_option_or_result() bool {
-	return u32(t) & 0x0300_0000 != 0
+	return t & 0x0300_0000 != 0
 }
 
 // debug returns a verbose representation of the information in ts, useful for tracing/debugging
@@ -505,64 +513,64 @@ pub fn new_type_ptr(idx int, nr_muls int) Type {
 // is_float returns `true` if `typ` is float
 @[inline]
 pub fn (typ Type) is_float() bool {
-	return !typ.is_ptr() && typ.idx() in ast.float_type_idxs
+	return !typ.is_ptr() && typ.idx() in float_type_idxs
 }
 
 // is_int returns `true` if `typ` is int
 @[inline]
 pub fn (typ Type) is_int() bool {
-	return !typ.is_ptr() && typ.idx() in ast.integer_type_idxs
+	return !typ.is_ptr() && typ.idx() in integer_type_idxs
 }
 
 // is_int_valptr returns `true` if `typ` is a pointer to a int
 @[inline]
 pub fn (typ Type) is_int_valptr() bool {
-	return typ.is_ptr() && typ.idx() in ast.integer_type_idxs
+	return typ.is_ptr() && typ.idx() in integer_type_idxs
 }
 
 // is_float_valptr return `true` if `typ` is a pointer to float
 @[inline]
 pub fn (typ Type) is_float_valptr() bool {
-	return typ.is_ptr() && typ.idx() in ast.float_type_idxs
+	return typ.is_ptr() && typ.idx() in float_type_idxs
 }
 
 // is_pure_int return `true` if `typ` is a pure int
 @[inline]
 pub fn (typ Type) is_pure_int() bool {
-	return int(typ) in ast.integer_type_idxs
+	return int(typ) in integer_type_idxs
 }
 
 // is_pure_float return `true` if `typ` is a pure float
 @[inline]
 pub fn (typ Type) is_pure_float() bool {
-	return int(typ) in ast.float_type_idxs
+	return int(typ) in float_type_idxs
 }
 
 // is_signed return `true` if `typ` is signed
 @[inline]
 pub fn (typ Type) is_signed() bool {
-	return typ.idx() in ast.signed_integer_type_idxs
+	return typ.idx() in signed_integer_type_idxs
 }
 
 // is_unsigned return `true` if `typ` is unsigned
 @[inline]
 pub fn (typ Type) is_unsigned() bool {
-	return typ.idx() in ast.unsigned_integer_type_idxs
+	return typ.idx() in unsigned_integer_type_idxs
 }
 
 pub fn (typ Type) flip_signedness() Type {
 	return match typ {
-		ast.i8_type { ast.u8_type }
-		ast.i16_type { ast.u16_type }
-		ast.int_type { ast.u32_type }
-		ast.i32_type { ast.u32_type }
-		ast.isize_type { ast.usize_type }
-		ast.i64_type { ast.u64_type }
-		ast.u8_type { ast.i8_type }
-		ast.u16_type { ast.i16_type }
-		ast.u32_type { ast.int_type }
-		ast.usize_type { ast.isize_type }
-		ast.u64_type { ast.i64_type }
+		i8_type { u8_type }
+		i16_type { u16_type }
+		int_type { u32_type }
+		i32_type { u32_type }
+		isize_type { usize_type }
+		i64_type { u64_type }
+		u8_type { i8_type }
+		u16_type { i16_type }
+		u32_type { int_type }
+		usize_type { isize_type }
+		u64_type { i64_type }
 		else { typ }
 	}
 }
@@ -570,27 +578,29 @@ pub fn (typ Type) flip_signedness() Type {
 // is_int_literal returns `true` if `typ` is a int literal
 @[inline]
 pub fn (typ Type) is_int_literal() bool {
-	return int(typ) == ast.int_literal_type_idx
+	return int(typ) == int_literal_type_idx
 }
 
 // is_number returns `true` if `typ` is a number
 @[inline]
 pub fn (typ Type) is_number() bool {
-	return typ.clear_flags() in ast.number_type_idxs
+	return typ.clear_flags() in number_type_idxs
 }
 
 // is_string returns `true` if `typ` is a string type
 @[inline]
 pub fn (typ Type) is_string() bool {
-	return typ.idx() == ast.string_type_idx
+	return typ.idx() == string_type_idx
 }
 
 // is_bool returns `true` if `typ` is of bool type
 @[inline]
 pub fn (typ Type) is_bool() bool {
-	return typ.idx() == ast.bool_type_idx
+	return typ.idx() == bool_type_idx
 }
 
+pub const invalid_type_idx = -1
+pub const no_type_idx = 0
 pub const void_type_idx = 1
 pub const voidptr_type_idx = 2
 pub const byteptr_type_idx = 3
@@ -648,6 +658,8 @@ pub const number_type_idxs = [i8_type_idx, i16_type_idx, int_type_idx, i32_type_
 	rune_type_idx]
 pub const pointer_type_idxs = [voidptr_type_idx, byteptr_type_idx, charptr_type_idx, nil_type_idx]
 
+pub const invalid_type = idx_to_type(invalid_type_idx) // -1 is a purposefully invalid type, not by default, but to signify checker errors
+pub const no_type = idx_to_type(no_type_idx) // 0 is an invalid type, but it is useful for initialising default ast.Type values, in fields or before loops
 pub const void_type = new_type(void_type_idx)
 pub const ovoid_type = new_type(void_type_idx).set_flag(.option) // the return type of `fn ()?`
 pub const rvoid_type = new_type(void_type_idx).set_flag(.result) // the return type of `fn () !`
@@ -687,15 +699,15 @@ pub const cptr_types = merge_types(voidptr_types, byteptr_types, charptr_types)
 pub const nil_type = new_type(nil_type_idx)
 
 fn new_charptr_types() []Type {
-	return [ast.charptr_type, new_type(ast.char_type_idx).set_nr_muls(1)]
+	return [charptr_type, new_type(char_type_idx).set_nr_muls(1)]
 }
 
 fn new_byteptr_types() []Type {
-	return [ast.byteptr_type, new_type(ast.u8_type_idx).set_nr_muls(1)]
+	return [byteptr_type, new_type(u8_type_idx).set_nr_muls(1)]
 }
 
 fn new_voidptr_types() []Type {
-	return [ast.voidptr_type, new_type(ast.voidptr_type_idx).set_nr_muls(1)]
+	return [voidptr_type, new_type(voidptr_type_idx).set_nr_muls(1)]
 }
 
 pub fn merge_types(params ...[]Type) []Type {
@@ -712,8 +724,8 @@ pub fn merge_types(params ...[]Type) []Type {
 
 pub fn mktyp(typ Type) Type {
 	return match typ {
-		ast.float_literal_type { ast.f64_type }
-		ast.int_literal_type { ast.int_type }
+		float_literal_type { f64_type }
+		int_literal_type { int_type }
 		else { typ }
 	}
 }
@@ -929,10 +941,20 @@ pub fn (t &TypeSymbol) is_empty_struct_array() bool {
 	if t.info is ArrayFixed {
 		elem_sym := global_table.final_sym(t.info.elem_type)
 		if elem_sym.info is Struct {
-			return elem_sym.info.fields.len == 0
+			return elem_sym.info.is_empty_struct()
 		}
 	}
 	return false
+}
+
+@[inline]
+pub fn (t &Struct) is_empty_struct() bool {
+	return t.fields.len == 0 && t.embeds.len == 0
+}
+
+@[inline]
+pub fn (t &Struct) is_unresolved_generic() bool {
+	return t.generic_types.len > 0 && t.concrete_types.len == 0
 }
 
 pub fn (t &TypeSymbol) is_array_fixed() bool {
@@ -1013,7 +1035,7 @@ pub fn (mut t Table) register_builtin_type_symbols() {
 		cname: '__v_thread'
 		mod:   'builtin'
 		info:  Thread{
-			return_type: ast.void_type
+			return_type: void_type
 		}
 	) // 29
 	t.register_sym(kind: .interface_, name: 'IError', cname: 'IError', mod: 'builtin') // 30
@@ -1068,7 +1090,7 @@ pub fn (t &TypeSymbol) is_builtin() bool {
 // type_size returns the size and alignment (in bytes) of `typ`, similarly to  C's `sizeof()` and `alignof()`.
 pub fn (t &Table) type_size(typ Type) (int, int) {
 	if typ.has_option_or_result() {
-		return t.type_size(ast.error_type_idx)
+		return t.type_size(error_type_idx)
 	}
 	if typ.nr_muls() > 0 {
 		return t.pointer_size, t.pointer_size
@@ -1248,7 +1270,7 @@ pub fn (t &Table) type_to_str(typ Type) string {
 // type name in code (for builtin)
 pub fn (t &Table) type_to_code(typ Type) string {
 	match typ {
-		ast.int_literal_type, ast.float_literal_type { return t.sym(typ).kind.str() }
+		int_literal_type, float_literal_type { return t.sym(typ).kind.str() }
 		else { return t.type_to_str_using_aliases(typ, map[string]string{}) }
 	}
 }
@@ -1324,7 +1346,7 @@ pub fn (t &Table) type_to_str_using_aliases(typ Type, import_aliases map[string]
 			res = sym.kind.str()
 		}
 		.array {
-			if typ == ast.array_type {
+			if typ == array_type {
 				res = 'array'
 				return res
 			}
@@ -1380,7 +1402,7 @@ pub fn (t &Table) type_to_str_using_aliases(typ Type, import_aliases map[string]
 			}
 		}
 		.map {
-			if int(typ) == ast.map_type_idx {
+			if int(typ) == map_type_idx {
 				res = 'map'
 				return res
 			}
@@ -1567,7 +1589,7 @@ pub fn (t &Table) fn_signature_using_aliases(func &Fn, import_aliases map[string
 		}
 	}
 	sb.write_string(')')
-	if func.return_type != ast.void_type {
+	if func.return_type != void_type {
 		sb.write_string(' ')
 		sb.write_string(t.type_to_str_using_aliases(func.return_type, import_aliases))
 	}
@@ -1740,7 +1762,7 @@ pub fn (t &TypeSymbol) find_field(name string) ?StructField {
 		Aggregate { return t.info.find_field(name) }
 		Struct { return t.info.find_field(name) }
 		Interface { return t.info.find_field(name) }
-		SumType { return t.info.find_field(name) }
+		SumType { return t.info.find_sum_type_field(name) }
 		else { return none }
 	}
 }
@@ -1803,13 +1825,41 @@ pub fn (s Struct) get_field(name string) StructField {
 	panic('unknown field `${name}`')
 }
 
-pub fn (s &SumType) find_field(name string) ?StructField {
+pub fn (s &SumType) find_sum_type_field(name string) ?StructField {
 	for mut field in unsafe { s.fields } {
 		if field.name == name {
 			return field
 		}
 	}
 	return none
+}
+
+// For the 'field does not exist or have the same type in all sumtype  variants' error.
+// To print all sumtype variants the developer has to fix.
+pub fn (t &Table) find_missing_variants(s &SumType, field_name string) string {
+	mut res := []string{cap: 5}
+	for variant in s.variants {
+		ts := t.sym(variant)
+		if ts.kind != .struct_ {
+			continue
+		}
+		mut found := false
+		struct_info := ts.info as Struct
+		for field in struct_info.fields {
+			if field.name == field_name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			res << ts.name
+		}
+	}
+	// println('!!!!! field_name=${field_name}')
+	// print_backtrace()
+	// println(res)
+	str := res.join(', ')
+	return str.replace("'", '`')
 }
 
 pub fn (i Interface) defines_method(name string) bool {

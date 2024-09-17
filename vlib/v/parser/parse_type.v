@@ -9,6 +9,7 @@ import v.util
 import v.token
 
 const maximum_inline_sum_type_variants = 3
+const generic_type_level_cutoff_limit = 10 // it is very rarely deeper than 4
 
 fn (mut p Parser) parse_array_type(expecting token.Kind, is_option bool) ast.Type {
 	p.check(expecting)
@@ -334,7 +335,7 @@ fn (mut p Parser) parse_fn_type(name string, generic_types []ast.Type) ast.Type 
 	}
 
 	generic_names := p.types_to_names(generic_types, fn_type_pos, 'generic_types') or {
-		return ast.Type(0)
+		return ast.no_type
 	}
 
 	func := ast.Fn{
@@ -415,16 +416,16 @@ fn (mut p Parser) parse_inline_sum_type() ast.Type {
 	}
 	variants := p.parse_sum_type_variants()
 	if variants.len > 1 {
-		if variants.len > parser.maximum_inline_sum_type_variants {
+		if variants.len > maximum_inline_sum_type_variants {
 			pos := variants[0].pos.extend(variants.last().pos)
-			p.warn_with_pos('an inline sum type expects a maximum of ${parser.maximum_inline_sum_type_variants} types (${variants.len} were given)',
+			p.warn_with_pos('an inline sum type expects a maximum of ${maximum_inline_sum_type_variants} types (${variants.len} were given)',
 				pos)
 		}
 		mut variant_names := []string{}
 		for variant in variants {
 			if variant.typ == 0 {
 				p.error_with_pos('unknown type for variant: ${variant}', variant.pos)
-				return ast.Type(0)
+				return ast.no_type
 			}
 			variant_names << p.table.sym(variant.typ).name
 		}
@@ -451,7 +452,7 @@ fn (mut p Parser) parse_inline_sum_type() ast.Type {
 	} else if variants.len == 1 {
 		return variants[0].typ
 	}
-	return ast.Type(0)
+	return ast.no_type
 }
 
 // parse_sum_type_variants parses several types separated with a pipe and returns them as a list with at least one node.
@@ -713,7 +714,7 @@ fn (mut p Parser) parse_any_type(language ast.Language, is_ptr bool, check_dot b
 			if name == 'thread' {
 				return p.parse_thread_type()
 			}
-			mut ret := ast.Type(0)
+			mut ret := ast.no_type
 			if name == '' {
 				// This means the developer is using some wrong syntax like `x: int` instead of `x int`
 				p.error('expecting type declaration')
@@ -781,8 +782,7 @@ fn (mut p Parser) parse_any_type(language ast.Language, is_ptr bool, check_dot b
 						if name.len == 1 && name[0].is_capital() {
 							return p.parse_generic_type(name)
 						}
-						if p.tok.kind in [.lt, .lsbr]
-							&& p.tok.pos - p.prev_tok.pos == p.prev_tok.len {
+						if p.tok.kind in [.lt, .lsbr] && p.tok.is_next_to(p.prev_tok) {
 							return p.parse_generic_inst_type(name)
 						}
 						return p.find_type_or_add_placeholder(name, language)
@@ -806,7 +806,7 @@ fn (mut p Parser) find_type_or_add_placeholder(name string, language ast.Languag
 				if p.struct_init_generic_types.len > 0 && sym.info.generic_types.len > 0
 					&& p.struct_init_generic_types != sym.info.generic_types {
 					generic_names := p.types_to_names(p.struct_init_generic_types, p.tok.pos(),
-						'struct_init_generic_types') or { return ast.Type(0) }
+						'struct_init_generic_types') or { return ast.no_type }
 					// NOTE:
 					// Used here for the wraparound `< >` characters, is not a reserved character in generic syntax,
 					// is used as the `generic names` part of the qualified type name,
@@ -866,6 +866,14 @@ fn (mut p Parser) parse_generic_type(name string) ast.Type {
 }
 
 fn (mut p Parser) parse_generic_inst_type(name string) ast.Type {
+	p.generic_type_level++
+	defer {
+		p.generic_type_level--
+	}
+	if p.generic_type_level > generic_type_level_cutoff_limit {
+		p.error('too many levels of Parser.parse_generic_inst_type() calls: ${p.generic_type_level}, probably due to too many layers embedded generic type')
+		return ast.void_type
+	}
 	mut bs_name := name
 	mut bs_cname := name
 	start_pos := p.tok.pos()
@@ -881,6 +889,9 @@ fn (mut p Parser) parse_generic_inst_type(name string) ast.Type {
 		type_pos = type_pos.extend(p.prev_tok.pos())
 		if gt.has_flag(.generic) {
 			is_instance = false
+		}
+		if gt == 0 {
+			return ast.void_type
 		}
 		gts := p.table.sym(gt)
 		if gts.kind == .multi_return {

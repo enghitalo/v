@@ -13,12 +13,12 @@ fn init() {
 		eprintln(@METHOD)
 	}
 	unsafe { // Unsafe is needed for taking an address of const
-		C.mbedtls_ctr_drbg_init(&mbedtls.ctr_drbg)
-		C.mbedtls_entropy_init(&mbedtls.entropy)
-		ret := C.mbedtls_ctr_drbg_seed(&mbedtls.ctr_drbg, C.mbedtls_entropy_func, &mbedtls.entropy,
-			0, 0)
+		C.mbedtls_ctr_drbg_init(&ctr_drbg)
+		C.mbedtls_entropy_init(&entropy)
+		ret := C.mbedtls_ctr_drbg_seed(&ctr_drbg, C.mbedtls_entropy_func, &entropy, 0,
+			0)
 		if ret != 0 {
-			C.mbedtls_ctr_drbg_free(&mbedtls.ctr_drbg)
+			C.mbedtls_ctr_drbg_free(&ctr_drbg)
 			panic('Failed to seed ssl context: ${ret}')
 		}
 	}
@@ -59,7 +59,7 @@ pub fn new_sslcerts_in_memory(verify string, cert string, cert_key string) !&SSL
 	if cert_key != '' {
 		unsafe {
 			ret := C.mbedtls_pk_parse_key(&certs.client_key, cert_key.str, cert_key.len + 1,
-				0, 0, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+				0, 0, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 			if ret != 0 {
 				return error_with_code('v error', ret)
 			}
@@ -86,7 +86,7 @@ pub fn new_sslcerts_from_file(verify string, cert string, cert_key string) !&SSL
 	if cert_key != '' {
 		unsafe {
 			ret := C.mbedtls_pk_parse_keyfile(&certs.client_key, &char(cert_key.str),
-				0, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+				0, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 			if ret != 0 {
 				return error_with_code('v error', ret)
 			}
@@ -114,6 +114,7 @@ pub mut:
 	handle    int
 	duration  time.Duration
 	opened    bool
+	ip        string
 
 	owns_socket bool
 }
@@ -179,7 +180,7 @@ fn (mut l SSLListener) init() ! {
 	C.mbedtls_pk_init(&l.certs.client_key)
 
 	unsafe {
-		C.mbedtls_ssl_conf_rng(&l.conf, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+		C.mbedtls_ssl_conf_rng(&l.conf, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 	}
 
 	mut ret := 0
@@ -256,14 +257,18 @@ pub fn (mut l SSLListener) accept() !&SSLConn {
 		opened: true
 	}
 
-	// TODO: save the client's IP address somewhere (maybe add a field to SSLConn ?)
-	mut ret := C.mbedtls_net_accept(&l.server_fd, &conn.server_fd, unsafe { nil }, 0,
-		unsafe { nil })
+	ip := [16]u8{}
+	iplen := usize(0)
+
+	mut ret := C.mbedtls_net_accept(&l.server_fd, &conn.server_fd, &ip, 16, &iplen)
 	if ret != 0 {
 		return error_with_code("can't accept connection", ret)
 	}
 	conn.handle = conn.server_fd.fd
 	conn.owns_socket = true
+	if iplen == 4 {
+		conn.ip = '${ip[0]}.${ip[1]}.${ip[2]}.${ip[3]}'
+	}
 
 	C.mbedtls_ssl_init(&conn.ssl)
 	C.mbedtls_ssl_config_init(&conn.conf)
@@ -279,6 +284,11 @@ pub fn (mut l SSLListener) accept() !&SSLConn {
 	ret = C.mbedtls_ssl_handshake(&conn.ssl)
 	for ret != 0 {
 		if ret != C.MBEDTLS_ERR_SSL_WANT_READ && ret != C.MBEDTLS_ERR_SSL_WANT_WRITE {
+			conn.shutdown() or {
+				$if trace_ssl ? {
+					eprintln('${@METHOD} shutdown ---> res: ${err}')
+				}
+			}
 			return error_with_code('SSL handshake failed', ret)
 		}
 		ret = C.mbedtls_ssl_handshake(&conn.ssl)
@@ -362,7 +372,7 @@ fn (mut s SSLConn) init() ! {
 	}
 
 	unsafe {
-		C.mbedtls_ssl_conf_rng(&s.conf, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+		C.mbedtls_ssl_conf_rng(&s.conf, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 	}
 
 	if s.config.verify != '' || s.config.cert != '' || s.config.cert_key != '' {
@@ -384,7 +394,7 @@ fn (mut s SSLConn) init() ! {
 		if s.config.cert_key != '' {
 			unsafe {
 				ret = C.mbedtls_pk_parse_key(&s.certs.client_key, s.config.cert_key.str,
-					s.config.cert_key.len + 1, 0, 0, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+					s.config.cert_key.len + 1, 0, 0, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 			}
 		}
 	} else {
@@ -397,7 +407,7 @@ fn (mut s SSLConn) init() ! {
 		if s.config.cert_key != '' {
 			unsafe {
 				ret = C.mbedtls_pk_parse_keyfile(&s.certs.client_key, &char(s.config.cert_key.str),
-					0, C.mbedtls_ctr_drbg_random, &mbedtls.ctr_drbg)
+					0, C.mbedtls_ctr_drbg_random, &ctr_drbg)
 			}
 		}
 	}

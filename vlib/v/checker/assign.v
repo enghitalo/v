@@ -491,7 +491,7 @@ fn (mut c Checker) assign_stmt(mut node ast.AssignStmt) {
 			else {
 				if mut left is ast.IndexExpr {
 					// eprintln('>>> left.is_setter: ${left.is_setter:10} | left.is_map: ${left.is_map:10} | left.is_array: ${left.is_array:10}')
-					if left.is_map && left.is_setter {
+					if (left.is_map || left.is_farray) && left.is_setter {
 						left.recursive_mapset_is_setter(true)
 					}
 				}
@@ -731,13 +731,13 @@ or use an explicit `unsafe{ a[..] }`, if you do not want a copy of the slice.',
 				}
 
 				node = ast.AssignStmt{
-					op:           .assign
-					pos:          node.pos
-					end_comments: node.end_comments
-					left:         node.left
-					right:        [
+					op:            .assign
+					pos:           node.pos
+					end_comments:  node.end_comments
+					left:          node.left
+					right:         [
 						ast.Expr(ast.InfixExpr{
-							left: ast.CastExpr{
+							left:       ast.CastExpr{
 								expr:      node.left[0]
 								typ:       modified_left_type
 								typname:   c.table.type_str(modified_left_type)

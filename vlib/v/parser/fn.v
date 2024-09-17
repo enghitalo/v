@@ -55,7 +55,8 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 	if p.tok.kind != .rpar {
 		params := p.table.fns[fn_name] or { unsafe { p.table.fns['${p.mod}.${fn_name}'] } }.params
 		if args.len < params.len && p.prev_tok.kind != .comma {
-			p.unexpected_with_pos(p.prev_tok.pos(), expecting: '`,`')
+			pos := if p.tok.kind == .eof { p.prev_tok.pos() } else { p.tok.pos() }
+			p.unexpected_with_pos(pos, expecting: '`,`')
 		} else if args.len > params.len {
 			ok_arg_pos := (args[params.len - 1] or { args[0] }).pos
 			pos := token.Pos{
@@ -64,7 +65,8 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 			}
 			p.unexpected_with_pos(pos.extend(p.tok.pos()), expecting: '`)`')
 		} else {
-			p.unexpected_with_pos(p.prev_tok.pos(), expecting: '`)`')
+			pos := if p.tok.kind == .eof { p.prev_tok.pos() } else { p.tok.pos() }
+			p.unexpected_with_pos(pos, expecting: '`)`')
 		}
 	}
 	last_pos := p.tok.pos()
@@ -107,8 +109,8 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 			kind:  or_kind
 			pos:   or_pos
 		}
-		scope:    p.scope
-		comments: comments
+		scope:              p.scope
+		comments:           comments
 	}
 }
 
@@ -119,7 +121,7 @@ fn (mut p Parser) call_args() []ast.CallArg {
 		p.inside_call_args = prev_inside_call_args
 	}
 	mut args := []ast.CallArg{}
-	for p.tok.kind != .rpar && p.tok.kind != .comma {
+	for p.tok.kind != .rpar {
 		if p.tok.kind == .eof {
 			return args
 		}
@@ -162,9 +164,10 @@ fn (mut p Parser) call_args() []ast.CallArg {
 			comments: comments
 			pos:      pos
 		}
-		if p.tok.kind == .comma {
-			p.next()
+		if p.tok.kind != .comma {
+			break
 		}
+		p.next()
 	}
 	return args
 }
@@ -591,6 +594,16 @@ run them via `v file.v` instead',
 			language: language
 		})
 	}
+	/*
+	// Register implicit context var
+	p.scope.register(ast.Var{
+		name: 'ctx'
+		typ: ast.error_type
+		pos: p.tok.pos()
+		is_used: true
+		is_stack_obj: true
+	})
+	*/
 	// Body
 	p.cur_fn_name = name
 	mut stmts := []ast.Stmt{}
@@ -641,7 +654,7 @@ run them via `v file.v` instead',
 		is_conditional: conditional_ctdefine_idx != ast.invalid_type_idx
 		ctdefine_idx:   conditional_ctdefine_idx
 		//
-		receiver: ast.StructField{
+		receiver:              ast.StructField{
 			name: rec.name
 			typ:  rec.typ
 		}
@@ -857,7 +870,7 @@ fn (mut p Parser) anon_fn() ast.AnonFn {
 	p.inside_defer = old_inside_defer
 	// name := p.table.get_type_name(typ)
 	return ast.AnonFn{
-		decl: ast.FnDecl{
+		decl:           ast.FnDecl{
 			name:            name
 			short_name:      ''
 			mod:             p.mod

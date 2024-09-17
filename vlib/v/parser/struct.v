@@ -53,7 +53,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 	}
 	generic_types, _ := p.parse_generic_types()
 	mut pre_comments := p.eat_comments()
-	no_body := p.tok.kind != .lcbr
+	no_body := p.tok.kind != .lcbr && p.tok.kind != .key_implements
 	if language == .v && no_body {
 		p.error('`${p.tok.lit}` lacks body')
 		return ast.StructDecl{}
@@ -93,20 +93,30 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 	mut is_field_mut := false
 	mut is_field_pub := false
 	mut is_field_global := false
+	mut is_implements := false
+	mut implements_types := []ast.TypeNode{cap: 3} // ast.void_type
 	mut last_line := p.prev_tok.pos().line_nr + 1
 	mut end_comments := []ast.Comment{}
 	if !no_body {
+		if p.tok.kind == .key_implements {
+			is_implements = true
+			for {
+				p.next()
+				type_pos := p.tok.pos()
+				implements_types << ast.TypeNode{
+					typ: p.parse_type()
+					pos: type_pos
+				}
+				if p.tok.kind != .comma {
+					break
+				}
+			}
+		}
 		p.check(.lcbr)
 		pre_comments << p.eat_comments()
 		mut i := 0
 		for p.tok.kind != .rcbr {
 			mut comments := []ast.Comment{}
-			for p.tok.kind == .comment {
-				comments << p.comment()
-				if p.tok.kind == .rcbr {
-					break
-				}
-			}
 			if p.tok.kind == .rcbr {
 				end_comments = p.eat_comments(same_line: true)
 				break
@@ -168,12 +178,8 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				is_field_mut = false
 				is_field_global = false
 			}
-			for p.tok.kind == .comment {
-				comments << p.comment()
-				if p.tok.kind == .rcbr {
-					break
-				}
-			}
+			pre_field_comments := p.eat_comments()
+			mut next_field_comments := []ast.Comment{}
 			field_start_pos := p.tok.pos()
 			mut is_field_volatile := false
 			mut is_field_deprecated := false
@@ -187,8 +193,9 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				|| p.peek_tok.kind == .dot) && language == .v && p.peek_tok.kind != .key_fn
 			is_on_top := ast_fields.len == 0 && !(is_field_pub || is_field_mut || is_field_global)
 			has_prev_newline := p.has_prev_newline()
+			has_break_line := has_prev_newline || p.has_prev_line_comment_or_label()
 			mut field_name := ''
-			mut typ := ast.Type(0)
+			mut typ := ast.no_type
 			mut type_pos := token.Pos{}
 			mut field_pos := token.Pos{}
 			mut option_pos := token.Pos{}
@@ -227,12 +234,6 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 			} else {
 				// struct field
 				field_name = p.check_name()
-				for p.tok.kind == .comment {
-					comments << p.comment()
-					if p.tok.kind == .rcbr {
-						break
-					}
-				}
 				p.inside_struct_field_decl = true
 				if p.tok.kind == .key_struct {
 					// Anon structs
@@ -269,7 +270,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				}
 				p.inside_struct_attr_decl = false
 			}
-			comments << p.eat_comments()
+			comments << p.eat_comments(same_line: true)
 			mut default_expr := ast.empty_expr
 			mut has_default_expr := false
 			if !is_embed {
@@ -283,7 +284,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 						else {}
 					}
 					has_default_expr = true
-					comments << p.eat_comments()
+					comments << p.eat_comments(same_line: true)
 				}
 				if p.tok.kind == .at {
 					p.inside_struct_attr_decl = true
@@ -295,19 +296,23 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 						}
 					}
 					p.inside_struct_attr_decl = false
-					comments << p.eat_comments()
+					comments << p.eat_comments(same_line: true)
 				}
+				next_field_comments = p.eat_comments(follow_up: true)
 				ast_fields << ast.StructField{
 					name:             field_name
 					typ:              typ
 					pos:              field_pos
 					type_pos:         type_pos
 					option_pos:       option_pos
+					pre_comments:     pre_field_comments
 					comments:         comments
+					next_comments:    next_field_comments
 					i:                i
 					default_expr:     default_expr
 					has_default_expr: has_default_expr
 					has_prev_newline: has_prev_newline
+					has_break_line:   has_break_line
 					attrs:            p.attrs
 					is_pub:           is_embed || is_field_pub
 					is_mut:           is_embed || is_field_mut
@@ -324,7 +329,9 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 				pos:              field_pos
 				type_pos:         type_pos
 				option_pos:       option_pos
+				pre_comments:     pre_field_comments
 				comments:         comments
+				next_comments:    next_field_comments
 				i:                i
 				default_expr:     default_expr
 				has_default_expr: has_default_expr
@@ -364,7 +371,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 			attrs:         attrs
 			is_anon:       is_anon
 		}
-		is_pub: is_pub
+		is_pub:   is_pub
 	}
 	if p.table.has_deep_child_no_ref(&sym, name) {
 		p.error_with_pos('invalid recursive struct `${orig_name}`', name_pos)
@@ -382,22 +389,24 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 	}
 	p.expr_mod = ''
 	return ast.StructDecl{
-		name:          name
-		is_pub:        is_pub
-		fields:        ast_fields
-		pos:           start_pos.extend_with_last_line(name_pos, last_line)
-		mut_pos:       mut_pos
-		pub_pos:       pub_pos
-		pub_mut_pos:   pub_mut_pos
-		global_pos:    global_pos
-		module_pos:    module_pos
-		language:      language
-		is_union:      is_union
-		attrs:         if is_anon { []ast.Attr{} } else { attrs } // anon structs can't have attributes
-		pre_comments:  pre_comments
-		end_comments:  end_comments
-		generic_types: generic_types
-		embeds:        embeds
+		name:             name
+		is_pub:           is_pub
+		fields:           ast_fields
+		pos:              start_pos.extend_with_last_line(name_pos, last_line)
+		mut_pos:          mut_pos
+		pub_pos:          pub_pos
+		pub_mut_pos:      pub_mut_pos
+		global_pos:       global_pos
+		module_pos:       module_pos
+		language:         language
+		is_union:         is_union
+		attrs:            if is_anon { []ast.Attr{} } else { attrs } // anon structs can't have attributes
+		pre_comments:     pre_comments
+		end_comments:     end_comments
+		generic_types:    generic_types
+		embeds:           embeds
+		is_implements:    is_implements
+		implements_types: implements_types
 	}
 }
 
@@ -424,12 +433,14 @@ fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option
 	mut has_update_expr := false
 	mut update_expr_pos := token.Pos{}
 	mut has_prev_newline := false
+	mut has_break_line := false
 	for p.tok.kind !in [.rcbr, .rpar, .eof] {
 		mut field_name := ''
 		mut expr := ast.empty_expr
 		mut field_pos := token.Pos{}
 		mut first_field_pos := token.Pos{}
-		mut comments := []ast.Comment{}
+		mut prev_comments := []ast.Comment{}
+		mut end_comments := []ast.Comment{}
 		mut nline_comments := []ast.Comment{}
 		is_update_expr := init_fields.len == 0 && p.tok.kind == .ellipsis
 		if no_keys {
@@ -437,7 +448,7 @@ fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option
 			expr = p.expr(0)
 			field_pos = expr.pos()
 			first_field_pos = field_pos
-			comments = p.eat_comments(same_line: true)
+			end_comments = p.eat_comments(same_line: true)
 		} else if is_update_expr {
 			// struct updating syntax; f2 := Foo{ ...f, name: 'f2' }
 			update_expr_pos = p.tok.pos()
@@ -446,12 +457,14 @@ fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option
 			update_expr_comments << p.eat_comments(same_line: true)
 			has_update_expr = true
 		} else {
+			prev_comments = p.eat_comments()
 			first_field_pos = p.tok.pos()
 			has_prev_newline = p.has_prev_newline()
+			has_break_line = has_prev_newline || p.has_prev_line_comment_or_label()
 			field_name = p.check_name()
 			p.check(.colon)
 			expr = p.expr(0)
-			comments = p.eat_comments(same_line: true)
+			end_comments = p.eat_comments(same_line: true)
 			last_field_pos := expr.pos()
 			field_len := if last_field_pos.len > 0 {
 				last_field_pos.pos - first_field_pos.pos + last_field_pos.len
@@ -469,18 +482,20 @@ fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option
 		if p.tok.kind == .comma {
 			p.next()
 		}
-		comments << p.eat_comments(same_line: true)
-		nline_comments << p.eat_comments()
+		end_comments << p.eat_comments(same_line: true)
+		nline_comments << p.eat_comments(follow_up: true)
 		if !is_update_expr {
 			init_fields << ast.StructInitField{
 				name:             field_name
 				expr:             expr
 				pos:              field_pos
 				name_pos:         first_field_pos
-				comments:         comments
+				pre_comments:     prev_comments
+				end_comments:     end_comments
 				next_comments:    nline_comments
 				parent_type:      typ
 				has_prev_newline: has_prev_newline
+				has_break_line:   has_break_line
 			}
 		}
 	}
@@ -503,11 +518,11 @@ fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option
 		} else {
 			p.prev_tok.pos()
 		})
-		no_keys:         no_keys
-		is_short_syntax: kind == .short_syntax
-		is_anon:         kind == .anon
-		pre_comments:    pre_comments
-		generic_types:   struct_init_generic_types
+		no_keys:              no_keys
+		is_short_syntax:      kind == .short_syntax
+		is_anon:              kind == .anon
+		pre_comments:         pre_comments
+		generic_types:        struct_init_generic_types
 	}
 }
 
@@ -553,12 +568,12 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 	}
 	// Declare the type
 	reg_idx := p.table.register_sym(
-		is_pub: is_pub
-		kind:   .interface_
-		name:   interface_name
-		cname:  util.no_dots(interface_name)
-		mod:    p.mod
-		info:   ast.Interface{
+		is_pub:   is_pub
+		kind:     .interface_
+		name:     interface_name
+		cname:    util.no_dots(interface_name)
+		mod:      p.mod
+		info:     ast.Interface{
 			types:         []
 			is_generic:    generic_types.len > 0
 			generic_types: generic_types
@@ -655,6 +670,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 		if p.peek_tok.kind == .lpar {
 			method_start_pos := p.tok.pos()
 			has_prev_newline := p.has_prev_newline()
+			has_break_line := has_prev_newline || p.has_prev_line_comment_or_label()
 			line_nr := p.tok.line_nr
 			name := p.check_name()
 
@@ -688,6 +704,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 				pos:              method_start_pos.extend(p.prev_tok.pos())
 				scope:            p.scope
 				has_prev_newline: has_prev_newline
+				has_break_line:   has_break_line
 			}
 			if p.tok.kind.is_start_of_type() && p.tok.line_nr == line_nr {
 				method.return_type_pos = p.tok.pos()
@@ -716,6 +733,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 			// interface fields
 			field_pos := p.tok.pos()
 			has_prev_newline := p.has_prev_newline()
+			has_break_line := has_prev_newline || p.has_prev_line_comment_or_label()
 			field_name := p.check_name()
 			mut type_pos := p.tok.pos()
 			field_typ := p.parse_type()
@@ -729,6 +747,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 				comments:         comments
 				is_pub:           true
 				has_prev_newline: has_prev_newline
+				has_break_line:   has_break_line
 			}
 			info.fields << ast.StructField{
 				name:             field_name
@@ -736,6 +755,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 				is_pub:           true
 				is_mut:           is_mut
 				has_prev_newline: has_prev_newline
+				has_break_line:   has_break_line
 			}
 		}
 	}

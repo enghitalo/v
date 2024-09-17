@@ -45,14 +45,14 @@ pub struct string {
 pub:
 	str &u8 = 0 // points to a C style 0 terminated string of bytes.
 	len int // the length of the .str field, excluding the ending 0 byte. It is always equal to strlen(.str).
+mut:
+	is_lit int
 	// NB string.is_lit is an enumeration of the following:
 	// .is_lit == 0 => a fresh string, should be freed by autofree
 	// .is_lit == 1 => a literal string from .rodata, should NOT be freed
 	// .is_lit == -98761234 => already freed string, protects against double frees.
 	// ---------> ^^^^^^^^^ calling free on these is a bug.
 	// Any other value means that the string has been corrupted.
-mut:
-	is_lit int
 }
 
 // runes returns an array of all the utf runes in the string `s`
@@ -940,6 +940,14 @@ pub fn (s string) rsplit_once(delim string) ?(string, string) {
 	return result[1], result[0]
 }
 
+// split_n splits the string based on the passed `delim` substring.
+// It returns the first Nth parts. When N=0, return all the splits.
+// The last returned element has the remainder of the string, even if
+// the remainder contains more `delim` substrings.
+pub fn (s string) split_n(delim string, n int) []string {
+	return s.split_nth(delim, n)
+}
+
 // split_nth splits the string based on the passed `delim` substring.
 // It returns the first Nth parts. When N=0, return all the splits.
 // The last returned element has the remainder of the string, even if
@@ -1712,8 +1720,11 @@ pub fn (s string) trim(cutset string) string {
 	if s == '' || cutset == '' {
 		return s.clone()
 	}
-	left, right := s.trim_indexes(cutset)
-	return s.substr(left, right)
+	if cutset.len_utf8() == cutset.len {
+		return s.trim_chars(cutset, .trim_both)
+	} else {
+		return s.trim_runes(cutset, .trim_both)
+	}
 }
 
 // trim_indexes gets the new start and end indices of a string when any of the characters given in `cutset` were stripped from the start and end of the string. Should be used as an input to `substr()`. If the string contains only the characters in `cutset`, both values returned are zero.
@@ -1746,6 +1757,78 @@ pub fn (s string) trim_indexes(cutset string) (int, int) {
 	return pos_left, pos_right + 1
 }
 
+enum TrimMode {
+	trim_left
+	trim_right
+	trim_both
+}
+
+@[direct_array_access]
+fn (s string) trim_chars(cutset string, mode TrimMode) string {
+	mut pos_left := 0
+	mut pos_right := s.len - 1
+	mut cs_match := true
+	for pos_left <= s.len && pos_right >= -1 && cs_match {
+		cs_match = false
+		if mode in [.trim_left, .trim_both] {
+			for cs in cutset {
+				if s[pos_left] == cs {
+					pos_left++
+					cs_match = true
+					break
+				}
+			}
+		}
+		if mode in [.trim_right, .trim_both] {
+			for cs in cutset {
+				if s[pos_right] == cs {
+					pos_right--
+					cs_match = true
+					break
+				}
+			}
+		}
+		if pos_left > pos_right {
+			return ''
+		}
+	}
+	return s.substr(pos_left, pos_right + 1)
+}
+
+@[direct_array_access]
+fn (s string) trim_runes(cutset string, mode TrimMode) string {
+	s_runes := s.runes()
+	c_runes := cutset.runes()
+	mut pos_left := 0
+	mut pos_right := s_runes.len - 1
+	mut cs_match := true
+	for pos_left <= s_runes.len && pos_right >= -1 && cs_match {
+		cs_match = false
+		if mode in [.trim_left, .trim_both] {
+			for cs in c_runes {
+				if s_runes[pos_left] == cs {
+					pos_left++
+					cs_match = true
+					break
+				}
+			}
+		}
+		if mode in [.trim_right, .trim_both] {
+			for cs in c_runes {
+				if s_runes[pos_right] == cs {
+					pos_right--
+					cs_match = true
+					break
+				}
+			}
+		}
+		if pos_left > pos_right {
+			return ''
+		}
+	}
+	return s_runes[pos_left..pos_right + 1].string()
+}
+
 // trim_left strips any of the characters given in `cutset` from the left of the string.
 // Example: assert 'd Hello V developer'.trim_left(' d') == 'Hello V developer'
 @[direct_array_access]
@@ -1753,21 +1836,11 @@ pub fn (s string) trim_left(cutset string) string {
 	if s == '' || cutset == '' {
 		return s.clone()
 	}
-	mut pos := 0
-	for pos < s.len {
-		mut found := false
-		for cs in cutset {
-			if s[pos] == cs {
-				found = true
-				break
-			}
-		}
-		if !found {
-			break
-		}
-		pos++
+	if cutset.len_utf8() == cutset.len {
+		return s.trim_chars(cutset, .trim_left)
+	} else {
+		return s.trim_runes(cutset, .trim_left)
 	}
-	return s[pos..]
 }
 
 // trim_right strips any of the characters given in `cutset` from the right of the string.
@@ -1777,23 +1850,11 @@ pub fn (s string) trim_right(cutset string) string {
 	if s.len < 1 || cutset.len < 1 {
 		return s.clone()
 	}
-	mut pos := s.len - 1
-	for pos >= 0 {
-		mut found := false
-		for cs in cutset {
-			if s[pos] == cs {
-				found = true
-			}
-		}
-		if !found {
-			break
-		}
-		pos--
+	if cutset.len_utf8() == cutset.len {
+		return s.trim_chars(cutset, .trim_right)
+	} else {
+		return s.trim_runes(cutset, .trim_right)
 	}
-	if pos < 0 {
-		return ''
-	}
-	return s[..pos + 1]
 }
 
 // trim_string_left strips `str` from the start of the string.
@@ -2318,9 +2379,7 @@ pub fn (s string) bytes() []u8 {
 // repeat returns a new string with `count` number of copies of the string it was called on.
 @[direct_array_access]
 pub fn (s string) repeat(count int) string {
-	if count < 0 {
-		panic('string.repeat: count is negative: ${count}')
-	} else if count == 0 {
+	if count <= 0 {
 		return ''
 	} else if count == 1 {
 		return s.clone()

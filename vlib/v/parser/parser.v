@@ -105,10 +105,15 @@ mut:
 	left_comments             []ast.Comment
 	script_mode               bool
 	script_mode_start_token   token.Token
+	generic_type_level        int // to avoid infinite recursion segfaults due to compiler bugs in ensure_type_exists
 pub mut:
-	scanner        &scanner.Scanner = unsafe { nil }
-	table          &ast.Table       = unsafe { nil }
-	scope          &ast.Scope       = unsafe { nil }
+	scanner &scanner.Scanner = unsafe { nil }
+	table   &ast.Table       = unsafe { nil }
+	scope   &ast.Scope       = unsafe { nil }
+
+	opened_scopes     int
+	max_opened_scopes int = 100 // values above 300 risk stack overflow
+
 	errors         []errors.Error
 	warnings       []errors.Warning
 	notices        []errors.Notice
@@ -161,10 +166,10 @@ pub fn parse_text(text string, path string, mut table ast.Table, comments_mode s
 		eprintln('> ${@MOD}.${@FN} comments_mode: ${comments_mode:-20} | path: ${path:-20} | text: ${text}')
 	}
 	mut p := Parser{
-		scanner: scanner.new_scanner(text, comments_mode, pref_)
-		table:   table
-		pref:    pref_
-		scope:   &ast.Scope{
+		scanner:  scanner.new_scanner(text, comments_mode, pref_)
+		table:    table
+		pref:     pref_
+		scope:    &ast.Scope{
 			start_pos: 0
 			parent:    table.global_scope
 		}
@@ -198,7 +203,7 @@ const normalised_working_folder = (os.real_path(os.getwd()) + os.path_separator)
 pub fn (mut p Parser) set_path(path string) {
 	p.file_path = path
 	p.file_base = os.base(path)
-	p.file_display_path = os.real_path(p.file_path).replace_once(parser.normalised_working_folder,
+	p.file_display_path = os.real_path(p.file_path).replace_once(normalised_working_folder,
 		'').replace('\\', '/')
 	p.inside_vlib_file = os.dir(path).contains('vlib')
 	p.inside_test_file = p.file_base.ends_with('_test.v') || p.file_base.ends_with('_test.vv')
@@ -241,10 +246,10 @@ pub fn parse_file(path string, mut table ast.Table, comments_mode scanner.Commen
 		eprintln('> ${@MOD}.${@FN} comments_mode: ${comments_mode:-20} | path: ${path}')
 	}
 	mut p := Parser{
-		scanner: scanner.new_scanner_file(path, comments_mode, pref_) or { panic(err) }
-		table:   table
-		pref:    pref_
-		scope:   &ast.Scope{
+		scanner:  scanner.new_scanner_file(path, comments_mode, pref_) or { panic(err) }
+		table:    table
+		pref:     pref_
+		scope:    &ast.Scope{
 			start_pos: 0
 			parent:    table.global_scope
 		}
@@ -451,10 +456,7 @@ fn (p &Parser) peek_token(n int) token.Token {
 fn (p &Parser) peek_token_after_var_list() token.Token {
 	mut n := 0
 	mut tok := p.tok
-	for {
-		if tok.kind == .eof {
-			break
-		}
+	for tok.kind != .eof {
 		if tok.kind == .key_mut {
 			n += 2
 		} else {
@@ -521,6 +523,12 @@ fn (p &Parser) has_prev_newline() bool {
 	return false
 }
 
+fn (p &Parser) has_prev_line_comment_or_label() bool {
+	return p.prev_tok.kind == .colon || (p.prev_tok.kind == .comment
+		&& p.tok.line_nr - p.prev_tok.line_nr == 1
+		&& p.prev_tok.line_nr - p.peek_token(-2).line_nr > 0)
+}
+
 fn (p &Parser) is_array_type() bool {
 	mut i := 1
 	mut tok := p.tok
@@ -546,10 +554,16 @@ fn (p &Parser) is_array_type() bool {
 }
 
 fn (mut p Parser) open_scope() {
+	if p.opened_scopes > p.max_opened_scopes {
+		p.should_abort = true
+		p.error('nested opened scopes limit reached: ${p.max_opened_scopes}')
+		return
+	}
 	p.scope = &ast.Scope{
 		parent:    p.scope
 		start_pos: p.tok.pos
 	}
+	p.opened_scopes++
 }
 
 fn (mut p Parser) close_scope() {
@@ -561,6 +575,7 @@ fn (mut p Parser) close_scope() {
 	p.scope.end_pos = p.prev_tok.pos
 	p.scope.parent.children << p.scope
 	p.scope = p.scope.parent
+	p.opened_scopes--
 }
 
 fn (mut p Parser) parse_block() []ast.Stmt {
@@ -904,32 +919,57 @@ pub:
 }
 
 fn (mut p Parser) eat_comments(cfg EatCommentsConfig) []ast.Comment {
-	mut line := p.prev_tok.line_nr
+	mut line := p.prev_tok.line_nr + p.prev_tok.lit.count('\n')
 	mut comments := []ast.Comment{}
 	for {
 		if p.tok.kind != .comment || (cfg.same_line && p.tok.line_nr > line)
-			|| (cfg.follow_up && (p.tok.line_nr > line + 1 || p.tok.lit.contains('\n'))) {
+			|| (cfg.follow_up && p.tok.line_nr > line + 1) {
 			break
 		}
 		comments << p.comment()
 		if cfg.follow_up {
-			line = p.prev_tok.line_nr
+			line = p.prev_tok.line_nr + p.prev_tok.lit.count('\n')
 		}
 	}
 	return comments
 }
 
+fn (mut p Parser) goto_eof() {
+	for p.tok.kind != .eof {
+		p.next()
+	}
+}
+
 fn (mut p Parser) stmt(is_top_level bool) ast.Stmt {
+	// ensure that possible parser aborts, are handled as early as possible (on the *next* processed statement):
+	if p.should_abort {
+		abort_pos := p.tok.pos()
+		p.goto_eof()
+		return ast.NodeError{
+			idx: 0
+			pos: abort_pos
+		}
+	}
+
 	p.trace_parser('stmt(${is_top_level})')
 	p.is_stmt_ident = p.tok.kind == .name
 	match p.tok.kind {
 		.lcbr {
 			mut pos := p.tok.pos()
-			stmts := p.parse_block()
-			pos.last_line = p.prev_tok.line_nr
-			return ast.Block{
-				stmts: stmts
-				pos:   pos
+			if p.peek_token(2).kind == .colon {
+				expr := p.expr(0)
+				// `{ 'abc' : 22 }`
+				return ast.ExprStmt{
+					expr: expr
+					pos:  pos
+				}
+			} else {
+				stmts := p.parse_block()
+				pos.last_line = p.prev_tok.line_nr
+				return ast.Block{
+					stmts: stmts
+					pos:   pos
+				}
 			}
 		}
 		.key_assert {
@@ -1202,7 +1242,7 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 	// x86: https://www.felixcloutier.com/x86/
 	// arm: https://developer.arm.com/documentation/dui0068/b/arm-instruction-reference
 	mut templates := []ast.AsmTemplate{}
-	for p.tok.kind !in [.semicolon, .rcbr] {
+	for p.tok.kind !in [.semicolon, .rcbr, .eof] {
 		template_pos := p.tok.pos()
 		mut name := ''
 		if p.tok.kind == .name && arch == .amd64 && p.tok.lit in ['rex', 'vex', 'xop'] {
@@ -1225,8 +1265,8 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 				p.next()
 
 				has_suffix := p.tok.lit[p.tok.lit.len - 1] in [`b`, `w`, `l`, `q`]
-				if !(p.tok.lit in parser.allowed_lock_prefix_ins || (has_suffix
-					&& p.tok.lit[0..p.tok.lit.len - 1] in parser.allowed_lock_prefix_ins)) {
+				if !(p.tok.lit in allowed_lock_prefix_ins
+					|| (has_suffix && p.tok.lit[0..p.tok.lit.len - 1] in allowed_lock_prefix_ins)) {
 					p.error('The lock prefix cannot be used on this instruction')
 				}
 				name += ' '
@@ -1299,7 +1339,7 @@ fn (mut p Parser) asm_stmt(is_top_level bool) ast.AsmStmt {
 								}
 							}
 							else {
-								verror('p.parse_number_literal() invalid output: `${number_lit}`')
+								p.error('p.parse_number_literal() invalid output: `${number_lit}`')
 							}
 						}
 					}
@@ -1441,7 +1481,7 @@ fn (mut p Parser) reg_or_alias() ast.AsmArg {
 		if x is ast.AsmRegister {
 			return ast.AsmArg(x as ast.AsmRegister)
 		} else {
-			verror('non-register ast.ScopeObject found in scope')
+			p.error('non-register ast.ScopeObject found in scope')
 			return ast.AsmDisp{} // should not be reached
 		}
 	} else if p.prev_tok.len >= 2 && p.prev_tok.lit[0] in [`b`, `f`]
@@ -1713,6 +1753,10 @@ fn (mut p Parser) asm_ios(output bool) []ast.AsmIO {
 		return []
 	}
 	for {
+		if p.tok.kind == .eof {
+			p.error('reached eof in asm_ios')
+			return []
+		}
 		pos := p.tok.pos()
 
 		mut constraint := ''
@@ -1747,6 +1791,7 @@ fn (mut p Parser) asm_ios(output bool) []ast.AsmIO {
 					// Numbered constraints - https://gcc.gnu.org/onlinedocs/gcc/Simple-Constraints.html
 					if p.tok.lit.int() >= 10 {
 						p.error_with_pos('The digit must be between 0 and 9 only', pos)
+						return []
 					}
 					p.check(.number)
 				} else {
@@ -1759,6 +1804,7 @@ fn (mut p Parser) asm_ios(output bool) []ast.AsmIO {
 			expr = expr.expr
 		} else {
 			p.error('asm in/output must be enclosed in brackets')
+			return []
 		}
 		mut alias := ''
 		if p.tok.kind == .key_as {
@@ -2204,12 +2250,12 @@ fn (mut p Parser) parse_multi_expr(is_top_level bool) ast.Stmt {
 			vals: left
 			pos:  tok.pos()
 		}
-		pos: pos
+		pos:  pos
 	}
 }
 
 fn (mut p Parser) is_following_concrete_types() bool {
-	if !(p.tok.kind == .lsbr && p.tok.pos - p.prev_tok.pos == p.prev_tok.len) {
+	if !(p.tok.kind in [.lt, .lsbr] && p.tok.is_next_to(p.prev_tok)) {
 		return false
 	}
 	mut i := 1
@@ -2287,7 +2333,7 @@ fn (mut p Parser) ident(language ast.Language) ast.Ident {
 				is_volatile: false
 				is_option:   is_option
 			}
-			scope: p.scope
+			scope:    p.scope
 		}
 	}
 	is_following_concrete_types := p.is_following_concrete_types()
@@ -2328,16 +2374,16 @@ fn (mut p Parser) ident(language ast.Language) ast.Ident {
 		}
 	}
 	return ast.Ident{
-		tok_kind: p.tok.kind
-		kind:     .unresolved
-		name:     name
-		comptime: p.comptime_if_cond
-		language: language
-		mod:      p.mod
-		pos:      pos
-		is_mut:   is_mut
-		mut_pos:  mut_pos
-		info:     ast.IdentVar{
+		tok_kind:       p.tok.kind
+		kind:           .unresolved
+		name:           name
+		comptime:       p.comptime_if_cond
+		language:       language
+		mod:            p.mod
+		pos:            pos
+		is_mut:         is_mut
+		mut_pos:        mut_pos
+		info:           ast.IdentVar{
 			typ:         typ
 			is_mut:      is_mut
 			is_static:   is_static
@@ -2345,8 +2391,8 @@ fn (mut p Parser) ident(language ast.Language) ast.Ident {
 			is_option:   or_kind != ast.OrKind.absent
 			share:       ast.sharetype_from_flags(is_shared, is_atomic)
 		}
-		scope:   p.scope
-		or_expr: ast.OrExpr{
+		scope:          p.scope
+		or_expr:        ast.OrExpr{
 			kind:  or_kind
 			stmts: or_stmts
 			pos:   or_pos
@@ -2505,7 +2551,7 @@ fn (mut p Parser) is_generic_cast() bool {
 			break
 		}
 
-		if i > 20 || tok.kind !in parser.valid_tokens_inside_types {
+		if i > 20 || tok.kind !in valid_tokens_inside_types {
 			return false
 		}
 	}
@@ -2524,8 +2570,14 @@ fn (mut p Parser) is_generic_cast() bool {
 fn (mut p Parser) alias_array_type() ast.Type {
 	full_name := p.prepend_mod(p.tok.lit)
 	if idx := p.table.type_idxs[full_name] {
+		if idx == 0 {
+			return ast.void_type
+		}
 		sym := p.table.sym(idx)
 		if sym.info is ast.Alias {
+			if sym.info.parent_type == 0 {
+				return ast.void_type
+			}
 			if p.table.sym(sym.info.parent_type).kind == .array {
 				return idx
 			}
@@ -2779,7 +2831,7 @@ fn (mut p Parser) name_expr() ast.Expr {
 			}
 			node = ast.CastExpr{
 				typ:     to_typ
-				typname: p.table.sym(to_typ).name
+				typname: if to_typ != 0 { p.table.sym(to_typ).name } else { 'unknown typename' }
 				expr:    expr
 				arg:     arg
 				has_arg: has_arg
@@ -2865,7 +2917,7 @@ fn (mut p Parser) name_expr() ast.Expr {
 			}
 			pos.extend(p.tok.pos())
 			return ast.SelectorExpr{
-				expr: ast.Ident{
+				expr:        ast.Ident{
 					name:  name
 					scope: p.scope
 				}
@@ -2897,10 +2949,10 @@ fn (mut p Parser) name_expr() ast.Expr {
 				field_name := p.check_name()
 				pos.extend(p.tok.pos())
 				return ast.Ident{
-					name: p.prepend_mod(typ_name) + '__static__' + field_name
-					mod:  p.mod
-					kind: .function
-					info: ast.IdentFn{
+					name:  p.prepend_mod(typ_name) + '__static__' + field_name
+					mod:   p.mod
+					kind:  .function
+					info:  ast.IdentFn{
 						typ: fn_type
 					}
 					pos:   pos
@@ -2937,7 +2989,7 @@ fn (mut p Parser) name_expr() ast.Expr {
 			p.check(.rpar)
 			node = ast.CastExpr{
 				typ:     to_typ
-				typname: p.table.sym(to_typ).name
+				typname: if to_typ != 0 { p.table.sym(to_typ).name } else { 'unknown type name' }
 				expr:    expr
 				arg:     ast.empty_expr
 				has_arg: false
@@ -3056,16 +3108,16 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 			if p.tok.kind == .key_orelse {
 				or_stmts_high, or_pos_high = p.or_block(.no_err_var)
 				return ast.IndexExpr{
-					left:  left
-					pos:   pos_high
-					index: ast.RangeExpr{
+					left:     left
+					pos:      pos_high
+					index:    ast.RangeExpr{
 						low:      ast.empty_expr
 						high:     high
 						has_high: has_high
 						pos:      pos_high
 						is_gated: is_gated
 					}
-					or_expr: ast.OrExpr{
+					or_expr:  ast.OrExpr{
 						kind:  .block
 						stmts: or_stmts_high
 						pos:   or_pos_high
@@ -3085,16 +3137,16 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 		}
 
 		return ast.IndexExpr{
-			left:  left
-			pos:   pos_high
-			index: ast.RangeExpr{
+			left:     left
+			pos:      pos_high
+			index:    ast.RangeExpr{
 				low:      ast.empty_expr
 				high:     high
 				has_high: has_high
 				pos:      pos_high
 				is_gated: is_gated
 			}
-			or_expr: ast.OrExpr{
+			or_expr:  ast.OrExpr{
 				kind:  or_kind_high
 				stmts: or_stmts_high
 				pos:   or_pos_high
@@ -3124,9 +3176,9 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 			if p.tok.kind == .key_orelse {
 				or_stmts_low, or_pos_low = p.or_block(.no_err_var)
 				return ast.IndexExpr{
-					left:  left
-					pos:   pos_low
-					index: ast.RangeExpr{
+					left:     left
+					pos:      pos_low
+					index:    ast.RangeExpr{
 						low:      expr
 						high:     high
 						has_high: has_high
@@ -3134,7 +3186,7 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 						pos:      pos_low
 						is_gated: is_gated
 					}
-					or_expr: ast.OrExpr{
+					or_expr:  ast.OrExpr{
 						kind:  .block
 						stmts: or_stmts_low
 						pos:   or_pos_low
@@ -3154,9 +3206,9 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 		}
 
 		return ast.IndexExpr{
-			left:  left
-			pos:   pos_low
-			index: ast.RangeExpr{
+			left:     left
+			pos:      pos_low
+			index:    ast.RangeExpr{
 				low:      expr
 				high:     high
 				has_high: has_high
@@ -3164,7 +3216,7 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 				pos:      pos_low
 				is_gated: is_gated
 			}
-			or_expr: ast.OrExpr{
+			or_expr:  ast.OrExpr{
 				kind:  or_kind_low
 				stmts: or_stmts_low
 				pos:   or_pos_low
@@ -3183,10 +3235,10 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 		if p.tok.kind == .key_orelse {
 			or_stmts, or_pos = p.or_block(.no_err_var)
 			return ast.IndexExpr{
-				left:    left
-				index:   expr
-				pos:     pos
-				or_expr: ast.OrExpr{
+				left:     left
+				index:    expr
+				pos:      pos
+				or_expr:  ast.OrExpr{
 					kind:  .block
 					stmts: or_stmts
 					pos:   or_pos
@@ -3205,10 +3257,10 @@ fn (mut p Parser) index_expr(left ast.Expr, is_gated bool) ast.IndexExpr {
 		}
 	}
 	return ast.IndexExpr{
-		left:    left
-		index:   expr
-		pos:     pos
-		or_expr: ast.OrExpr{
+		left:     left
+		index:    expr
+		pos:      pos
+		or_expr:  ast.OrExpr{
 			kind:  or_kind
 			stmts: or_stmts
 			pos:   or_pos
@@ -3296,8 +3348,8 @@ fn (mut p Parser) dot_expr(left ast.Expr) ast.Expr {
 				kind:  or_kind
 				pos:   or_pos
 			}
-			scope:    p.scope
-			comments: comments
+			scope:             p.scope
+			comments:          comments
 		}
 		return mcall_expr
 	}
@@ -4122,8 +4174,10 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 	mut uses_exprs := false
 	mut enum_attrs := map[string][]ast.Attr{}
 	for p.tok.kind != .eof && p.tok.kind != .rcbr {
+		pre_comments := p.eat_comments()
 		pos := p.tok.pos()
 		has_prev_newline := p.has_prev_newline()
+		has_break_line := has_prev_newline || p.has_prev_line_comment_or_label()
 		val := p.check_name()
 		vals << val
 		mut expr := ast.empty_expr
@@ -4143,7 +4197,7 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 			p.attrs = []
 		}
 		comments := p.eat_comments(same_line: true)
-		next_comments := p.eat_comments()
+		next_comments := p.eat_comments(follow_up: true)
 		fields << ast.EnumField{
 			name:             val
 			source_name:      source_name(val)
@@ -4151,6 +4205,8 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 			expr:             expr
 			has_expr:         has_expr
 			has_prev_newline: has_prev_newline
+			has_break_line:   has_break_line
+			pre_comments:     pre_comments
 			comments:         comments
 			next_comments:    next_comments
 			attrs:            attrs
@@ -4245,11 +4301,11 @@ fn (mut p Parser) enum_decl() ast.EnumDecl {
 	}
 
 	idx := p.table.register_sym(ast.TypeSymbol{
-		kind:  .enum_
-		name:  name
-		cname: util.no_dots(name)
-		mod:   p.mod
-		info:  ast.Enum{
+		kind:   .enum_
+		name:   name
+		cname:  util.no_dots(name)
+		mod:    p.mod
+		info:   ast.Enum{
 			vals:             vals
 			is_flag:          is_flag
 			is_multi_allowed: is_multi_allowed
@@ -4346,6 +4402,10 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 	// type SumType = Aaa | Bbb | Ccc
 	if sum_variants.len > 1 {
 		for variant in sum_variants {
+			if variant.typ == 0 {
+				// the type symbol is probably coming from another .v file
+				continue
+			}
 			variant_sym := p.table.sym(variant.typ)
 			// TODO: implement this check for error too
 			if variant_sym.kind == .none_ {
@@ -4356,11 +4416,11 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 		variant_types := sum_variants.map(it.typ)
 		prepend_mod_name := p.prepend_mod(name)
 		typ := p.table.register_sym(ast.TypeSymbol{
-			kind:  .sum_type
-			name:  prepend_mod_name
-			cname: util.no_dots(prepend_mod_name)
-			mod:   p.mod
-			info:  ast.SumType{
+			kind:   .sum_type
+			name:   prepend_mod_name
+			cname:  util.no_dots(prepend_mod_name)
+			mod:    p.mod
+			info:   ast.SumType{
 				variants:      variant_types
 				is_generic:    generic_types.len > 0
 				generic_types: generic_types
@@ -4392,9 +4452,13 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 	}
 	// sum_variants will have only one element
 	parent_type := sum_variants[0].typ
-	parent_sym := p.table.sym(parent_type)
 	pidx := parent_type.idx()
-	p.check_for_impure_v(parent_sym.language, decl_pos)
+	mut parent_language := ast.Language.v
+	if parent_type != 0 {
+		parent_sym := p.table.sym(parent_type)
+		parent_language = parent_sym.language
+		p.check_for_impure_v(parent_sym.language, decl_pos)
+	}
 	prepend_mod_name := if language == .v { p.prepend_mod(name) } else { name } // `C.time_t`, not `time.C.time_t`
 	idx := p.table.register_sym(ast.TypeSymbol{
 		kind:       .alias
@@ -4404,9 +4468,9 @@ fn (mut p Parser) type_decl() ast.TypeDecl {
 		parent_idx: pidx
 		info:       ast.Alias{
 			parent_type: parent_type
-			language:    parent_sym.language
+			language:    parent_language
 		}
-		is_pub: is_pub
+		is_pub:     is_pub
 	})
 	type_end_pos := p.prev_tok.pos()
 	if idx in [ast.string_type_idx, ast.rune_type_idx, ast.array_type_idx, ast.map_type_idx] {
@@ -4470,11 +4534,6 @@ fn (p &Parser) new_true_expr() ast.Expr {
 		val: true
 		pos: p.tok.pos()
 	}
-}
-
-@[noreturn]
-fn verror(s string) {
-	util.verror('parser error', s)
 }
 
 fn (mut p Parser) top_level_statement_start() {

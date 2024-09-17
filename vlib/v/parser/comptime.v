@@ -16,8 +16,8 @@ fn (mut p Parser) parse_comptime_type() ast.ComptimeType {
 	pos := p.tok.pos()
 	p.check(.dollar)
 	name := p.check_name()
-	if name !in parser.comptime_types {
-		p.error('unsupported compile-time type `${name}`: only ${parser.comptime_types} are supported')
+	if name !in comptime_types {
+		p.error('unsupported compile-time type `${name}`: only ${comptime_types} are supported')
 	}
 	mut kind := ast.ComptimeTypeKind.unknown
 	kind = match name {
@@ -132,7 +132,7 @@ fn (mut p Parser) comptime_call() ast.ComptimeCall {
 		p.check(.dot)
 	}
 	method_name := p.check_name()
-	if method_name !in parser.supported_comptime_calls {
+	if method_name !in supported_comptime_calls {
 		p.error(error_msg)
 		return err_node
 	}
@@ -244,8 +244,8 @@ fn (mut p Parser) comptime_call() ast.ComptimeCall {
 			embed_file: ast.EmbeddedFile{
 				compression_type: embed_compression_type
 			}
-			args: [arg]
-			pos:  start_pos.extend(p.prev_tok.pos())
+			args:       [arg]
+			pos:        start_pos.extend(p.prev_tok.pos())
 		}
 	}
 	// Compile vweb html template to V code, parse that V code and embed the resulting V function
@@ -363,6 +363,14 @@ fn (mut p Parser) comptime_for() ast.ComptimeFor {
 		p.close_scope()
 	}
 	match for_val {
+		'params' {
+			p.scope.register(ast.Var{
+				name: val_var
+				typ:  p.table.find_type_idx('MethodParam')
+				pos:  var_pos
+			})
+			kind = .params
+		}
 		'methods' {
 			p.scope.register(ast.Var{
 				name: val_var
@@ -403,7 +411,7 @@ fn (mut p Parser) comptime_for() ast.ComptimeFor {
 			kind = .attributes
 		}
 		else {
-			p.error_with_pos('unknown kind `${for_val}`, available are: `methods`, `fields`, `values`, `variants` or `attributes`',
+			p.error_with_pos('unknown kind `${for_val}`, available are: `methods`, `fields`, `values`, `variants`, `attributes` or `params`',
 				p.prev_tok.pos())
 			return ast.ComptimeFor{}
 		}
@@ -442,6 +450,9 @@ fn (mut p Parser) at() ast.AtExpr {
 		'@VMODROOT' { token.AtKind.vmodroot_path }
 		'@VMODHASH' { token.AtKind.vmod_hash }
 		'@VROOT' { token.AtKind.vroot_path } // deprecated, use @VEXEROOT or @VMODROOT
+		'@BUILD_DATE' { token.AtKind.build_date }
+		'@BUILD_TIME' { token.AtKind.build_time }
+		'@BUILD_TIMESTAMP' { token.AtKind.build_timestamp }
 		else { token.AtKind.unknown }
 	}
 	expr := ast.AtExpr{

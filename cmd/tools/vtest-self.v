@@ -186,7 +186,7 @@ const skip_with_fsanitize_memory = [
 	'vlib/net/websocket/websocket_test.v',
 	'vlib/net/smtp/smtp_test.v',
 	'vlib/v/tests/websocket_logger_interface_should_compile_test.v',
-	'vlib/v/tests/fn_literal_type_test.v',
+	'vlib/v/tests/fns/fn_literal_type_test.v',
 	'vlib/x/sessions/tests/db_store_test.v',
 ]
 const skip_with_fsanitize_address = [
@@ -230,9 +230,11 @@ const skip_on_musl = [
 	'vlib/gg/draw_fns_api_test.v',
 	'vlib/v/tests/skip_unused/gg_code.vv',
 	'vlib/v/tests/c_struct_with_reserved_field_name_test.v',
+	'vlib/arrays/parallel/parallel_test.v',
 ]
 const skip_on_ubuntu_musl = [
 	'do_not_remove',
+	'vlib/arrays/parallel/parallel_test.v',
 	//'vlib/v/gen/js/jsgen_test.v',
 	'vlib/net/http/cookie_test.v',
 	'vlib/net/http/status_test.v',
@@ -278,7 +280,7 @@ const skip_on_ubuntu_musl = [
 	'vlib/builtin/js/array_test.js.v',
 	'vlib/net/smtp/smtp_test.v',
 	'vlib/v/tests/websocket_logger_interface_should_compile_test.v',
-	'vlib/v/tests/fn_literal_type_test.v',
+	'vlib/v/tests/fns/fn_literal_type_test.v',
 	'vlib/x/sessions/tests/db_store_test.v',
 	'vlib/x/vweb/tests/vweb_test.v',
 	'vlib/x/vweb/tests/vweb_app_test.v',
@@ -292,10 +294,10 @@ const skip_on_non_linux = [
 ]
 const skip_on_windows_msvc = [
 	'do_not_remove',
-	'vlib/v/tests/const_fixed_array_containing_references_to_itself_test.v', // error C2099: initializer is not a constant
-	'vlib/v/tests/const_and_global_with_same_name_test.v', // error C2099: initializer is not a constant
-	'vlib/v/tests/sumtype_as_cast_1_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
-	'vlib/v/tests/sumtype_as_cast_2_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
+	'vlib/v/tests/consts/const_fixed_array_containing_references_to_itself_test.v', // error C2099: initializer is not a constant
+	'vlib/v/tests/consts/const_and_global_with_same_name_test.v', // error C2099: initializer is not a constant
+	'vlib/v/tests/sumtypes/sumtype_as_cast_1_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
+	'vlib/v/tests/sumtypes/sumtype_as_cast_2_test.v', // error: cannot support compound statement expression ({expr; expr; expr;})
 	'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.c.v', // TODO
 ]
 const skip_on_windows = [
@@ -315,7 +317,7 @@ const skip_on_windows = [
 	'vlib/sync/many_times_test.v',
 	'vlib/sync/once_test.v',
 	'vlib/v/tests/websocket_logger_interface_should_compile_test.v',
-	'vlib/v/tests/fn_literal_type_test.v',
+	'vlib/v/tests/fns/fn_literal_type_test.v',
 ]
 const skip_on_non_windows = [
 	'do_not_remove',
@@ -335,7 +337,7 @@ const skip_on_arm64 = [
 const skip_on_non_amd64_or_arm64 = [
 	'do_not_remove',
 	// closures aren't implemented yet:
-	'vlib/v/tests/closure_test.v',
+	'vlib/v/tests/fns/closure_test.v',
 	// native aren't implemented:
 	'vlib/v/gen/native/tests/native_test.v',
 	'vlib/context/cancel_test.v',
@@ -444,10 +446,8 @@ fn main() {
 		tsession.skip_files << 'vlib/db/pg/pg_orm_test.v'
 		tsession.skip_files << 'vlib/db/pg/pg_double_test.v'
 	}
-	$if windows {
-		if cfg.github_job == 'tcc' {
-			tsession.skip_files << 'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.c.v'
-		}
+	$if windows && tinyc {
+		tsession.skip_files << 'vlib/v/tests/project_with_cpp_code/compiling_cpp_files_with_a_cplusplus_compiler_test.c.v'
 	}
 	if !cfg.run_slow_sanitize
 		&& ((cfg.sanitize_undefined || cfg.sanitize_memory || cfg.sanitize_address)

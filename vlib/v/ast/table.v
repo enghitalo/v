@@ -30,7 +30,9 @@ pub mut:
 	used_fns           map[string]bool // filled in by the checker, when pref.skip_unused = true;
 	used_consts        map[string]bool // filled in by the checker, when pref.skip_unused = true;
 	used_globals       map[string]bool // filled in by the checker, when pref.skip_unused = true;
-	used_vweb_types    []Type          // vweb context types, filled in by checker, when pref.skip_unused = true;
+	used_veb_types     []Type          // veb context types, filled in by checker, when pref.skip_unused = true;
+	veb_res_idx_cache  int             // Cache of `veb.Result` type
+	veb_ctx_idx_cache  int             // Cache of `veb.Context` type
 	used_maps          int             // how many times maps were used, filled in by checker, when pref.skip_unused = true;
 	panic_handler      FnPanicHandler = default_table_panic_handler
 	panic_userdata     voidptr        = unsafe { nil } // can be used to pass arbitrary data to panic_handler;
@@ -72,11 +74,10 @@ pub fn (mut t Table) free() {
 		t.used_fns.free()
 		t.used_consts.free()
 		t.used_globals.free()
-		t.used_vweb_types.free()
+		t.used_veb_types.free()
 	}
 }
 
-pub const invalid_type_idx = -1
 pub const fn_type_escape_seq = [' ', '', '(', '_', ')', '']
 pub const map_cname_escape_seq = ['[', '_T_', ', ', '_', ']', '']
 
@@ -97,7 +98,7 @@ pub fn new_table() &Table {
 		global_scope: &Scope{
 			parent: unsafe { nil }
 		}
-		cur_fn: unsafe { nil }
+		cur_fn:       unsafe { nil }
 	}
 	t.register_builtin_type_symbols()
 	t.is_fmt = true
@@ -232,6 +233,16 @@ pub fn (mut t TypeSymbol) register_method(new_fn Fn) int {
 	// for faster lookup in the checker's fn_decl method
 	t.methods << new_fn
 	return t.methods.len - 1
+}
+
+pub fn (mut t TypeSymbol) update_method(f Fn) int {
+	for i, m in t.methods {
+		if m.name == f.name {
+			t.methods[i] = f
+			return i
+		}
+	}
+	return -1
 }
 
 pub fn (t &Table) register_aggregate_method(mut sym TypeSymbol, name string) !Fn {
@@ -533,12 +544,11 @@ pub fn (t &Table) find_field(s &TypeSymbol, name string) !StructField {
 			}
 			SumType {
 				t.resolve_common_sumtype_fields(mut ts)
-				if field := ts.info.find_field(name) {
+				if field := ts.info.find_sum_type_field(name) {
 					return field
 				}
-				// mut info := ts.info as SumType
-				// TODO: a more detailed error so that it's easier to fix?
-				return error('field `${name}` does not exist or have the same type in all sumtype variants')
+				missing_variants := t.find_missing_variants(ts.info, name)
+				return error('field `${name}` does not exist or have the same type in these sumtype `${ts.name}` variants: ${missing_variants}')
 			}
 			else {}
 		}
@@ -658,7 +668,7 @@ pub fn (t &Table) find_sym_and_type_idx(name string) (&TypeSymbol, int) {
 	if idx > 0 {
 		return t.type_symbols[idx], idx
 	}
-	return ast.invalid_type_symbol, idx
+	return invalid_type_symbol, idx
 }
 
 pub const invalid_type_symbol = &TypeSymbol{
@@ -685,7 +695,7 @@ pub fn (t &Table) sym(typ Type) &TypeSymbol {
 	// this should never happen
 	t.panic('table.sym: invalid type (typ=${typ} idx=${idx}). Compiler bug. This should never happen. Please report the bug using `v bug file.v`.
 ')
-	return ast.invalid_type_symbol
+	return invalid_type_symbol
 }
 
 // final_sym follows aliases until it gets to a "real" Type
@@ -701,7 +711,7 @@ pub fn (t &Table) final_sym(typ Type) &TypeSymbol {
 	}
 	// this should never happen
 	t.panic('table.final_sym: invalid type (typ=${typ} idx=${idx}). Compiler bug. This should never happen. Please report the bug using `v bug file.v`.')
-	return ast.invalid_type_symbol
+	return invalid_type_symbol
 }
 
 @[inline]
@@ -769,7 +779,7 @@ fn (mut t Table) rewrite_already_registered_symbol(typ TypeSymbol, existing_idx 
 		}
 		return existing_idx
 	}
-	return ast.invalid_type_idx
+	return invalid_type_idx
 }
 
 @[inline]
@@ -871,7 +881,7 @@ pub fn (t &Table) array_cname(elem_type Type) string {
 	opt := if elem_type.has_flag(.option) { '_option_' } else { '' }
 	res := if elem_type.has_flag(.result) { '_result_' } else { '' }
 	if elem_type_sym.cname.contains('[') {
-		type_name := elem_type_sym.cname.replace_each(ast.map_cname_escape_seq)
+		type_name := elem_type_sym.cname.replace_each(map_cname_escape_seq)
 		return 'Array_${opt}${res}${type_name}${suffix}'
 	} else {
 		return 'Array_${opt}${res}${elem_type_sym.cname}${suffix}'
@@ -901,7 +911,7 @@ pub fn (t &Table) array_fixed_cname(elem_type Type, size int) string {
 	opt := if elem_type.has_flag(.option) { '_option_' } else { '' }
 	res := if elem_type.has_flag(.result) { '_result_' } else { '' }
 	if elem_type_sym.cname.contains('[') {
-		type_name := elem_type_sym.cname.replace_each(ast.map_cname_escape_seq)
+		type_name := elem_type_sym.cname.replace_each(map_cname_escape_seq)
 		return 'Array_fixed_${opt}${res}${type_name}${suffix}_${size}'
 	} else {
 		return 'Array_fixed_${opt}${res}${elem_type_sym.cname}${suffix}_${size}'
@@ -930,7 +940,7 @@ pub fn (t &Table) chan_cname(elem_type Type, is_mut bool) string {
 		suffix = '_ptr'
 	}
 	type_name := if elem_type_sym.cname.contains('[') {
-		elem_type_sym.cname.replace_each(ast.map_cname_escape_seq)
+		elem_type_sym.cname.replace_each(map_cname_escape_seq)
 	} else {
 		elem_type_sym.cname
 	}
@@ -1013,7 +1023,7 @@ pub fn (t &Table) map_cname(key_type Type, value_type Type) string {
 	opt := if value_type.has_flag(.option) { '_option_' } else { '' }
 	res := if value_type.has_flag(.result) { '_result_' } else { '' }
 	if value_type_sym.cname.contains('[') {
-		type_name := value_type_sym.cname.replace_each(ast.map_cname_escape_seq)
+		type_name := value_type_sym.cname.replace_each(map_cname_escape_seq)
 		return 'Map_${key_type_sym.cname}_${opt}${res}${type_name}${suffix}'
 	} else {
 		return 'Map_${key_type_sym.cname}_${opt}${res}${value_type_sym.cname}${suffix}'
@@ -1201,7 +1211,7 @@ pub fn (mut t Table) find_or_register_fn_type(f Fn, is_anon bool, has_decl bool)
 	cname := if f.name == '' {
 		'anon_fn_${t.fn_type_signature(f)}'
 	} else {
-		util.no_dots(f.name.clone()).replace_each(ast.fn_type_escape_seq)
+		util.no_dots(f.name.clone()).replace_each(fn_type_escape_seq)
 	}
 	anon := f.name == '' || is_anon
 	existing_idx := t.type_idxs[name]
@@ -1560,7 +1570,7 @@ pub fn (mut t Table) resolve_generic_static_type_name(fn_name string, generic_na
 			valid_generic := util.is_generic_type_name(generic_name)
 				&& generic_name in generic_names
 			if valid_generic {
-				name_type := Type(t.find_type_idx(generic_name)).set_flag(.generic)
+				name_type := idx_to_type(t.find_type_idx(generic_name)).set_flag(.generic)
 				if typ := t.resolve_generic_to_concrete(name_type, generic_names, concrete_types) {
 					return '${t.type_to_str(typ)}${fn_name[index..]}'
 				}
@@ -2089,7 +2099,7 @@ pub fn (mut t Table) unwrap_generic_type(typ Type, generic_names []string, concr
 				}
 			}
 			mut info := ts.info
-			info.is_generic = false
+			info.is_generic = final_concrete_types.any(it.has_flag(.generic))
 			info.concrete_types = final_concrete_types
 			info.parent_type = typ.set_flag(.generic)
 			info.fields = fields
@@ -2551,4 +2561,13 @@ pub fn (t &Table) get_attrs(sym TypeSymbol) []Attr {
 			return []
 		}
 	}
+}
+
+pub fn (mut t Table) get_veb_result_type_idx() int {
+	if t.veb_res_idx_cache > 0 {
+		return t.veb_res_idx_cache
+	}
+
+	t.veb_res_idx_cache = t.find_type_idx('veb.Result')
+	return t.veb_res_idx_cache
 }

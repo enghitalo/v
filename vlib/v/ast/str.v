@@ -1,10 +1,12 @@
 // Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
+@[has_globals]
 module ast
 
 import v.util
 import strings
+import sync.stdatomic
 
 // get_name returns the real name for the function declaration
 pub fn (f &FnDecl) get_name() string {
@@ -388,8 +390,23 @@ pub fn (lit &StringInterLiteral) get_fspec_braces(i int) (string, bool) {
 	return res.join(''), needs_braces
 }
 
+__global nested_expr_str_calls = i64(0)
+// too big values, risk stack overflow in `${expr}` (which uses `expr.str()`) calls
+const max_nested_expr_str_calls = 300
+
 // string representation of expr
-pub fn (x Expr) str() string {
+pub fn (x &Expr) str() string {
+	str_calls := stdatomic.add_i64(&nested_expr_str_calls, 1)
+	if str_calls > max_nested_expr_str_calls {
+		$if panic_on_deeply_nested_expr_str_calls ? {
+			eprintln('${@LOCATION}: too many nested Expr.str() calls: ${str_calls}, expr type: ${x.type_name()}')
+			exit(1)
+		}
+		return '{expression too deep}'
+	}
+	defer {
+		stdatomic.sub_i64(&nested_expr_str_calls, 1)
+	}
 	match x {
 		AnonFn {
 			return 'anon_fn'
@@ -498,13 +515,13 @@ pub fn (x Expr) str() string {
 			return 'spawn ${x.call_expr}'
 		}
 		Ident {
-			if obj := x.scope.find('${x.mod}.${x.name}') {
-				if obj is ConstField && x.mod != 'main' {
-					last_mod := x.mod.all_after_last('.')
-					return '${last_mod}.${x.name}'
-				}
+			if x.cached_name != '' {
+				return x.cached_name
 			}
-			return x.name.clone()
+			unsafe {
+				x.cached_name = x.name.clone()
+			}
+			return x.cached_name
 		}
 		IfExpr {
 			mut parts := []string{}
@@ -879,5 +896,6 @@ pub fn (e ComptimeForKind) str() string {
 		.attributes { return 'attributes' }
 		.values { return 'values' }
 		.variants { return 'variants' }
+		.params { return 'params' }
 	}
 }

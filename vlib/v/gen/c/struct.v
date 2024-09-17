@@ -32,12 +32,16 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 		g.typ(node.typ)
 	}
 	mut shared_styp := '' // only needed for shared x := St{...
-	if styp in c.skip_struct_init {
+	if styp in skip_struct_init {
 		// needed for c++ compilers
 		g.go_back(3)
 		return
 	}
 	mut sym := g.table.final_sym(g.unwrap_generic(node.typ))
+	if sym.kind == .sum_type {
+		g.write(g.type_default_sumtype(g.unwrap_generic(node.typ), sym))
+		return
+	}
 	is_amp := g.is_amp
 	is_multiline := node.init_fields.len > 5
 	g.is_amp = false // reset the flag immediately so that other struct inits in this expr are handled correctly
@@ -411,6 +415,14 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 					g.struct_init(default_init)
 				}
 				return true
+			} else if sym.language == .v && !field.typ.is_ptr() && sym.mod != 'builtin'
+				&& !sym.info.is_empty_struct() {
+				default_init := ast.StructInit{
+					typ: field.typ
+				}
+				g.write('.${field_name} = ')
+				g.struct_init(default_init)
+				return true
 			}
 		}
 	}
@@ -443,6 +455,9 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 	} else if field.typ.has_flag(.option) {
 		g.gen_option_error(field.typ, ast.None{})
 		return true
+	} else if sym.info is ast.SumType {
+		g.write(g.type_default_sumtype(field.typ, sym))
+		return true
 	} else if sym.info is ast.ArrayFixed {
 		g.write('{')
 		for i in 0 .. sym.info.size {
@@ -460,21 +475,6 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 		g.write(g.type_default(field.typ))
 	}
 	return true
-}
-
-fn (mut g Gen) is_empty_struct(t Type) bool {
-	sym := t.unaliased_sym
-	match sym.info {
-		ast.Struct {
-			if sym.info.fields.len > 0 || sym.info.embeds.len > 0 {
-				return false
-			}
-			return true
-		}
-		else {
-			return false
-		}
-	}
 }
 
 fn (mut g Gen) struct_decl(s ast.Struct, name string, is_anon bool) {

@@ -6,6 +6,15 @@ module parser
 import v.ast
 import v.token
 
+const max_expr_level = 100
+
+@[inline]
+fn (mut p Parser) check_expr_level() ! {
+	if p.expr_level > max_expr_level {
+		return error('expr level > ${max_expr_level}')
+	}
+}
+
 fn (mut p Parser) expr(precedence int) ast.Expr {
 	return p.check_expr(precedence) or {
 		if token.is_decl(p.tok.kind) && p.disallow_declarations_in_script_mode() {
@@ -17,6 +26,11 @@ fn (mut p Parser) expr(precedence int) ast.Expr {
 
 fn (mut p Parser) check_expr(precedence int) !ast.Expr {
 	p.trace_parser('expr(${precedence})')
+	p.expr_level++
+	defer {
+		p.expr_level--
+	}
+	p.check_expr_level()!
 	mut node := ast.empty_expr
 	is_stmt_ident := p.is_stmt_ident
 	p.is_stmt_ident = false
@@ -448,7 +462,7 @@ fn (mut p Parser) check_expr(precedence int) !ast.Expr {
 							kind:  or_kind
 							pos:   or_pos
 						}
-						scope: p.scope
+						scope:    p.scope
 					}
 				}
 				return node
@@ -464,9 +478,19 @@ fn (mut p Parser) check_expr(precedence int) !ast.Expr {
 		}
 		else {
 			if p.tok.kind == .key_struct && p.peek_tok.kind == .lcbr {
-				// Anonymous struct
-				p.next()
-				return p.struct_init('', .anon, false)
+				if p.expecting_type && p.inside_call_args {
+					// Anonymous struct	for json.decode
+					tok_pos := p.tok.pos()
+					return ast.TypeNode{
+						stmt: p.struct_decl(true)
+						pos:  tok_pos
+						typ:  ast.void_type
+					}
+				} else {
+					// Anonymous struct
+					p.next()
+					return p.struct_init('', .anon, false)
+				}
 			}
 			if p.tok.kind != .eof && !(p.tok.kind == .rsbr && p.inside_asm) {
 				// eof should be handled where it happens
@@ -811,7 +835,11 @@ fn (mut p Parser) prefix_expr() ast.Expr {
 
 fn (mut p Parser) recast_as_pointer(mut cast_expr ast.CastExpr, pos token.Pos) {
 	cast_expr.typ = cast_expr.typ.ref()
-	cast_expr.typname = p.table.sym(cast_expr.typ).name
+	cast_expr.typname = if cast_expr.typ == 0 {
+		p.table.sym(cast_expr.typ).name
+	} else {
+		'unknown type name'
+	}
 	cast_expr.pos = pos.extend(cast_expr.pos)
 }
 

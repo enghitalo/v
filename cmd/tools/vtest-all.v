@@ -402,6 +402,13 @@ fn get_all_commands() []Command {
 			rmfile: 'v.c'
 		}
 	}
+	$if linux || macos {
+		res << Command{
+			line:   '${vexe} -gc none -no-retry-compilation -cc tcc -d use_openssl -showcc examples/veb/todo/main.v'
+			okmsg:  'A simple veb app, compiles with `-gc none -no-retry-compilation -cc tcc -d use_openssl` on macos and linux'
+			rmfile: 'examples/veb/todo/main'
+		}
+	}
 	$if linux {
 		res << Command{
 			line:     '${vexe} vlib/v/tests/bench/bench_stbi_load.v && prlimit -v10485760 vlib/v/tests/bench/bench_stbi_load'
@@ -464,7 +471,7 @@ fn (mut cmd Command) run() {
 			return
 		}
 	}
-	//
+
 	mut is_failed := false
 	mut is_failed_expected := false
 	mut is_failed_starts_with := false
@@ -497,10 +504,10 @@ fn (mut cmd Command) run() {
 			is_failed_contains = true
 		}
 	}
-	//
+
 	run_label := if is_failed { term.failed('FAILED') } else { term_highlight('OK') }
 	println('> Running: "${cmd.line}" took: ${spent} ms ... ${run_label}')
-	//
+
 	if is_failed && is_failed_expected {
 		eprintln('> expected:\n${cmd.expect}')
 		eprintln('>   output:\n${cmd.output}')

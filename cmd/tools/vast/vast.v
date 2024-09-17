@@ -626,6 +626,8 @@ fn (t Tree) struct_decl(node ast.StructDecl) &Node {
 	obj.add_terse('attrs', t.array_node_attr(node.attrs))
 	obj.add('end_comments', t.array_node_comment(node.end_comments))
 	obj.add_terse('embeds', t.array_node_embed(node.embeds))
+	obj.add('is_implements', t.bool_node(node.is_implements))
+	obj.add_terse('implements_types', t.array_node_type_expr(node.implements_types))
 	return obj
 }
 
@@ -647,7 +649,9 @@ fn (t Tree) struct_field(node ast.StructField) &Node {
 	obj.add_terse('is_volatile', t.bool_node(node.is_volatile))
 	obj.add_terse('is_deprecated', t.bool_node(node.is_deprecated))
 	obj.add_terse('attrs', t.array_node_attr(node.attrs))
+	obj.add('pre_comments', t.array_node_comment(node.pre_comments))
 	obj.add('comments', t.array_node_comment(node.comments))
+	obj.add('next_comments', t.array_node_comment(node.next_comments))
 	obj.add('pos', t.pos(node.pos))
 	obj.add_terse('i', t.number_node(node.i))
 	return obj
@@ -683,6 +687,7 @@ fn (t Tree) enum_field(node ast.EnumField) &Node {
 	obj.add_terse('has_expr', t.bool_node(node.has_expr))
 	obj.add_terse('expr', t.expr(node.expr))
 	obj.add('pos', t.pos(node.pos))
+	obj.add('pre_comments', t.array_node_comment(node.pre_comments))
 	obj.add('comments', t.array_node_comment(node.comments))
 	obj.add('next_comments', t.array_node_comment(node.next_comments))
 	return obj
@@ -1611,7 +1616,8 @@ fn (t Tree) struct_init_field(node ast.StructInitField) &Node {
 	obj.add_terse('typ', t.type_node(node.typ))
 	obj.add_terse('expected_type', t.type_node(node.expected_type))
 	obj.add_terse('parent_type', t.type_node(node.parent_type))
-	obj.add('comments', t.array_node_comment(node.comments))
+	obj.add('pre_comments', t.array_node_comment(node.pre_comments))
+	obj.add('end_comments', t.array_node_comment(node.end_comments))
 	obj.add('next_comments', t.array_node_comment(node.next_comments))
 	obj.add('pos', t.pos(node.pos))
 	obj.add('name_pos', t.pos(node.name_pos))

@@ -22,7 +22,7 @@ mut:
 	is_pin       bool   // does the repl 'pin' entered source code
 	folder       string // the folder in which the repl will write its temporary source files
 	last_output  string // the last repl output
-	//
+
 	modules         []string          // all the import modules
 	alias           map[string]string // all the alias used in the import
 	includes        []string          // all the #include statements
@@ -87,7 +87,7 @@ fn new_repl(folder string) Repl {
 	vstartup_source := os.read_file(vstartup) or { '' }.trim_right('\n\r').split_into_lines()
 	os.mkdir_all(folder) or {}
 	return Repl{
-		readline: readline.Readline{
+		readline:       readline.Readline{
 			skip_empty: true
 		}
 		folder:         folder

@@ -112,7 +112,7 @@ fn skip_bom(file_content string) string {
 fn new_parser(srce string, convert_type bool) Parser {
 	src := skip_bom(srce)
 	return Parser{
-		scanner: &Scanner{
+		scanner:      &Scanner{
 			text: src.bytes()
 		}
 		convert_type: convert_type
@@ -165,6 +165,9 @@ fn decode_struct[T](_ T, res map[string]Any) !T {
 			mut json_name := field.name
 
 			for attr in field.attrs {
+				if attr.contains('skip') {
+					skip_field = true
+				}
 				if attr.contains('json: ') {
 					json_name = attr.replace('json: ', '')
 					if json_name == '-' {

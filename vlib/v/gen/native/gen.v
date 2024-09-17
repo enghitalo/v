@@ -338,8 +338,8 @@ pub fn gen(files []&ast.File, mut table ast.Table, out_name string, pref_ &pref.
 			eprintln('No available backend for this configuration. Use `-a arm64` or `-a amd64`.')
 			exit(1)
 		}
-		structs: []Struct{len: table.type_symbols.len}
-		eval:    eval.new_eval(table, pref_)
+		structs:  []Struct{len: table.type_symbols.len}
+		eval:     eval.new_eval(table, pref_)
 	}
 
 	g.code_gen.g = g
@@ -1219,9 +1219,9 @@ pub fn escape_string(s string) string {
 	mut out := []u8{cap: s.len}
 
 	for c in s {
-		if c in native.escape_codes {
-			out << native.escape_char
-			out << native.escape_codes[c]
+		if c in escape_codes {
+			out << escape_char
+			out << escape_codes[c]
 		} else {
 			out << c
 		}

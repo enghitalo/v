@@ -1,12 +1,14 @@
 // Copyright (c) 2019-2024 Alexander Medvednikov. All rights reserved.
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
+@[has_globals]
 module ast
 
 import v.token
 import v.errors
 import v.util
 import v.pref
+import sync.stdatomic
 
 pub type TypeDecl = AliasTypeDecl | FnTypeDecl | SumTypeDecl
 
@@ -18,7 +20,8 @@ pub const int_type_name = $if new_int ? {
 	'int'
 }
 
-pub type Expr = AnonFn
+pub type Expr = NodeError
+	| AnonFn
 	| ArrayDecompose
 	| ArrayInit
 	| AsCast
@@ -53,7 +56,6 @@ pub type Expr = AnonFn
 	| MapInit
 	| MatchExpr
 	| Nil
-	| NodeError
 	| None
 	| OffsetOf
 	| OrExpr
@@ -128,6 +130,7 @@ pub:
 	pos token.Pos
 pub mut:
 	typ          Type
+	stmt         Stmt = empty_stmt // for anon struct
 	end_comments []Comment // comments that after current type node
 }
 
@@ -330,10 +333,13 @@ pub:
 	pos              token.Pos
 	type_pos         token.Pos
 	option_pos       token.Pos
+	pre_comments     []Comment
 	comments         []Comment
+	next_comments    []Comment
 	i                int
 	has_default_expr bool
 	has_prev_newline bool
+	has_break_line   bool
 	attrs            []Attr
 	is_pub           bool
 	default_val      string
@@ -412,6 +418,9 @@ pub:
 	pre_comments []Comment
 	end_comments []Comment
 	embeds       []Embed
+
+	is_implements    bool
+	implements_types []TypeNode
 pub mut:
 	fields []StructField
 }
@@ -457,9 +466,11 @@ pub struct StructInitField {
 pub:
 	pos              token.Pos
 	name_pos         token.Pos
-	comments         []Comment
+	pre_comments     []Comment
+	end_comments     []Comment
 	next_comments    []Comment
 	has_prev_newline bool
+	has_break_line   bool
 pub mut:
 	expr          Expr   // `val1`
 	name          string // 'field1'
@@ -565,6 +576,7 @@ pub:
 	method_idx            int
 	rec_mut               bool // is receiver mutable
 	has_prev_newline      bool
+	has_break_line        bool
 	rec_share             ShareType
 	language              Language // V, C, JS
 	file_mode             Language // whether *the file*, where a function was a '.c.v', '.js.v' etc.
@@ -1020,6 +1032,7 @@ pub mut:
 	mod            string
 	name           string
 	full_name      string
+	cached_name    string
 	kind           IdentKind
 	info           IdentInfo
 	is_mut         bool // if mut *token* is before name. Use `is_mut()` to lookup mut variable
@@ -1237,6 +1250,7 @@ pub enum ComptimeForKind {
 	attributes
 	values
 	variants
+	params
 }
 
 pub struct ComptimeFor {
@@ -1271,6 +1285,7 @@ pub:
 	is_range   bool
 	pos        token.Pos
 	kv_pos     token.Pos
+	vv_pos     token.Pos
 	comments   []Comment
 	val_is_mut bool // `for mut val in vals {` means that modifying `val` will modify the array
 	// and the array cannot be indexed inside the loop
@@ -1366,10 +1381,12 @@ pub:
 	name             string // just `lock`, or `abc`, etc, no matter if the name is a keyword or not.
 	source_name      string // The name in the source, for example `@lock`, and `abc`. Note that `lock` is a keyword in V.
 	pos              token.Pos
+	pre_comments     []Comment // comment before Enumfield
 	comments         []Comment // comment after Enumfield in the same line
 	next_comments    []Comment // comments between current EnumField and next EnumField
 	has_expr         bool      // true, when .expr has a value
 	has_prev_newline bool      // empty newline before Enumfield
+	has_break_line   bool
 	attrs            []Attr
 pub mut:
 	expr Expr // the value of current EnumField; 123 in `ename = 123`
@@ -1868,6 +1885,7 @@ pub mut:
 	func       &AnonFn = unsafe { nil }
 	is_checked bool
 	typ        Type
+	call_ctx   &CallExpr = unsafe { nil }
 }
 
 pub struct Likely {
@@ -2090,7 +2108,22 @@ pub fn (expr Expr) is_blank_ident() bool {
 	return false
 }
 
+__global nested_expr_pos_calls = i64(0)
+// values above 14000 risk stack overflow by default on macos in Expr.pos() calls
+const max_nested_expr_pos_calls = 5000
+
 pub fn (expr Expr) pos() token.Pos {
+	pos_calls := stdatomic.add_i64(&nested_expr_pos_calls, 1)
+	if pos_calls > max_nested_expr_pos_calls {
+		$if panic_on_deeply_nested_expr_pos_calls ? {
+			eprintln('${@LOCATION}: too many nested Expr.pos() calls: ${pos_calls}, expr type: ${expr.type_name()}')
+			exit(1)
+		}
+		return token.Pos{}
+	}
+	defer {
+		stdatomic.sub_i64(&nested_expr_pos_calls, 1)
+	}
 	// all uncommented have to be implemented
 	// Note: please do not print here. the language server will hang
 	// as it uses STDIO primarily to communicate ~Ned
@@ -2460,8 +2493,11 @@ pub fn (mut lx IndexExpr) recursive_arraymap_set_is_setter() {
 pub fn all_registers(mut t Table, arch pref.Arch) map[string]ScopeObject {
 	mut res := map[string]ScopeObject{}
 	match arch {
+		._auto {
+			return all_registers(mut t, .amd64)
+		}
 		.amd64, .i386 {
-			for bit_size, array in ast.x86_no_number_register_list {
+			for bit_size, array in x86_no_number_register_list {
 				for name in array {
 					res[name] = AsmRegister{
 						name: name
@@ -2470,7 +2506,7 @@ pub fn all_registers(mut t Table, arch pref.Arch) map[string]ScopeObject {
 					}
 				}
 			}
-			for bit_size, array in ast.x86_with_number_register_list {
+			for bit_size, array in x86_with_number_register_list {
 				for name, max_num in array {
 					for i in 0 .. max_num {
 						hash_index := name.index('#') or {
@@ -2487,28 +2523,28 @@ pub fn all_registers(mut t Table, arch pref.Arch) map[string]ScopeObject {
 			}
 		}
 		.arm32 {
-			arm32 := gen_all_registers(mut t, ast.arm_no_number_register_list, ast.arm_with_number_register_list,
+			arm32 := gen_all_registers(mut t, arm_no_number_register_list, arm_with_number_register_list,
 				32)
 			for k, v in arm32 {
 				res[k] = v
 			}
 		}
 		.arm64 {
-			arm64 := gen_all_registers(mut t, ast.arm_no_number_register_list, ast.arm_with_number_register_list,
+			arm64 := gen_all_registers(mut t, arm_no_number_register_list, arm_with_number_register_list,
 				64)
 			for k, v in arm64 {
 				res[k] = v
 			}
 		}
 		.rv32 {
-			rv32 := gen_all_registers(mut t, ast.riscv_no_number_register_list, ast.riscv_with_number_register_list,
+			rv32 := gen_all_registers(mut t, riscv_no_number_register_list, riscv_with_number_register_list,
 				32)
 			for k, v in rv32 {
 				res[k] = v
 			}
 		}
 		.rv64 {
-			rv64 := gen_all_registers(mut t, ast.riscv_no_number_register_list, ast.riscv_with_number_register_list,
+			rv64 := gen_all_registers(mut t, riscv_no_number_register_list, riscv_with_number_register_list,
 				64)
 			for k, v in rv64 {
 				res[k] = v
@@ -2518,7 +2554,7 @@ pub fn all_registers(mut t Table, arch pref.Arch) map[string]ScopeObject {
 			// no registers
 		}
 		else { // TODO
-			panic('all_registers: unhandled arch')
+			panic('all_registers: unhandled arch: ${arch}')
 		}
 	}
 
@@ -2547,6 +2583,23 @@ fn gen_all_registers(mut t Table, without_numbers []string, with_numbers map[str
 		}
 	}
 	return res
+}
+
+pub fn (expr Expr) is_reference() bool {
+	return match expr {
+		PrefixExpr {
+			expr.op == .amp
+		}
+		UnsafeExpr {
+			expr.expr.is_reference()
+		}
+		ParExpr {
+			expr.expr.is_reference()
+		}
+		else {
+			false
+		}
+	}
 }
 
 // is `expr` a literal, i.e. it does not depend on any other declarations (C compile time constant)
