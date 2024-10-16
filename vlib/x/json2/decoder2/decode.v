@@ -565,6 +565,7 @@ fn (mut decoder Decoder) decode_value[T](mut val T) ! {
 		value_info := decoder.values_info[decoder.value_info_idx]
 
 		if value_info.value_kind == .string_ {
+			// TODO: improve performance
 			buffer_lenght, escape_positions := decoder.calculate_string_space_and_escapes()!
 
 			string_buffer := []u8{cap: buffer_lenght}
@@ -615,9 +616,7 @@ fn (mut decoder Decoder) decode_value[T](mut val T) ! {
 				}
 			}
 
-			unsafe {
-				*val = string_buffer.bytestr()
-			}
+			val = string_buffer.bytestr()
 		}
 	} $else $if T is $sumtype {
 		$for v in val.variants {
