@@ -95,8 +95,8 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 	} else {
 		name
 	}
-	if !(expr.is_method && (g.table.sym(expr.receiver_type).kind == .interface_
-		|| (g.table.sym(expr.receiver_type).kind == .struct_ && expr.is_field))) {
+	if !(expr.is_method && (g.table.sym(expr.receiver_type).kind == .interface
+		|| (g.table.sym(expr.receiver_type).kind == .struct && expr.is_field))) {
 		g.writeln('${arg_tmp_var}${dot}fn = ${fn_name};')
 	}
 	if expr.is_method {
@@ -239,21 +239,21 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 				rec_sym := g.table.sym(g.unwrap_generic(node.call_expr.receiver_type))
 				if f := rec_sym.find_method_with_generic_parent(node.call_expr.name) {
 					mut muttable := unsafe { &ast.Table(g.table) }
-					return_type := muttable.resolve_generic_to_concrete(f.return_type,
-						f.generic_names, node.call_expr.concrete_types) or { f.return_type }
+					return_type := muttable.convert_generic_type(f.return_type, f.generic_names,
+						node.call_expr.concrete_types) or { f.return_type }
 					mut arg_types := f.params.map(it.typ)
-					arg_types = arg_types.map(muttable.resolve_generic_to_concrete(it,
-						f.generic_names, node.call_expr.concrete_types) or { it })
+					arg_types = arg_types.map(muttable.convert_generic_type(it, f.generic_names,
+						node.call_expr.concrete_types) or { it })
 					fn_var = g.fn_var_signature(return_type, arg_types, 'fn')
 				}
 			} else {
 				if f := g.table.find_fn(node.call_expr.name) {
-					mut muttable := unsafe { &ast.Table(g.table) }
-					return_type := muttable.resolve_generic_to_concrete(f.return_type,
-						f.generic_names, node.call_expr.concrete_types) or { f.return_type }
+					concrete_types := node.call_expr.concrete_types.map(g.unwrap_generic(it))
+					return_type := g.table.convert_generic_type(f.return_type, f.generic_names,
+						concrete_types) or { f.return_type }
 					mut arg_types := f.params.map(it.typ)
-					arg_types = arg_types.map(muttable.resolve_generic_to_concrete(it,
-						f.generic_names, node.call_expr.concrete_types) or { it })
+					arg_types = arg_types.map(g.table.convert_generic_type(it, f.generic_names,
+						concrete_types) or { it })
 					for i, typ in arg_types {
 						mut typ_sym := g.table.sym(typ)
 						for {
@@ -310,7 +310,7 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 		if expr.is_method {
 			unwrapped_rec_type := g.unwrap_generic(expr.receiver_type)
 			typ_sym := g.table.sym(unwrapped_rec_type)
-			if typ_sym.kind == .interface_
+			if typ_sym.kind == .interface
 				&& (typ_sym.info as ast.Interface).defines_method(expr.name) {
 				rec_cc_type := g.cc_type(unwrapped_rec_type, false)
 				receiver_type_name := util.no_dots(rec_cc_type)
@@ -321,7 +321,7 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 				g.gowrappers.write_string('${idot}_typ]._method_${mname}(')
 				g.gowrappers.write_string('arg->arg0')
 				g.gowrappers.write_string('${idot}_object')
-			} else if typ_sym.kind == .struct_ && expr.is_field {
+			} else if typ_sym.kind == .struct && expr.is_field {
 				g.gowrappers.write_string('arg->arg0')
 				idot := if expr.left_type.is_ptr() { '->' } else { '.' }
 				mname := c_name(expr.name)
@@ -330,7 +330,7 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 				g.gowrappers.write_string('arg->fn(')
 				g.gowrappers.write_string('arg->arg0')
 			}
-			if expr.args.len > 0 && (typ_sym.kind != .struct_ || !expr.is_field) {
+			if expr.args.len > 0 && (typ_sym.kind != .struct || !expr.is_field) {
 				g.gowrappers.write_string(', ')
 			}
 		} else {
@@ -339,8 +339,8 @@ fn (mut g Gen) spawn_and_go_expr(node ast.SpawnExpr, mode SpawnGoMode) {
 		if expr.args.len > 0 {
 			mut has_cast := false
 			for i in 0 .. expr.args.len {
-				if g.table.sym(expr.expected_arg_types[i]).kind == .interface_
-					&& g.table.sym(expr.args[i].typ).kind != .interface_ {
+				if g.table.sym(expr.expected_arg_types[i]).kind == .interface
+					&& g.table.sym(expr.args[i].typ).kind != .interface {
 					has_cast = true
 					break
 				}

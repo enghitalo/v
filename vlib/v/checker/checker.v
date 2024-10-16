@@ -22,7 +22,7 @@ const type_level_cutoff_limit = 40 // it is very rarely deeper than 4
 const iface_level_cutoff_limit = 100
 const generic_fn_cutoff_limit_per_fn = 10_000 // how many times post_process_generic_fns, can visit the same function before bailing out
 
-const generic_fn_postprocess_iterations_cutoff_limit = 1000_000
+const generic_fn_postprocess_iterations_cutoff_limit = 1_000_000
 
 // array_builtin_methods contains a list of all methods on array, that return other typed arrays,
 // i.e. that act as *pseudogeneric* methods, that need compiler support, so that the types of the results
@@ -558,7 +558,7 @@ fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
 			c.error('type `${parent_typ_sym.str()}` is an alias, use the original alias type `${orig_sym}` instead',
 				node.type_pos)
 		}
-		.struct_ {
+		.struct {
 			if mut parent_typ_sym.info is ast.Struct {
 				// check if the generic param types have been defined
 				for ct in parent_typ_sym.info.concrete_types {
@@ -576,7 +576,7 @@ fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
 				// check if embed types are struct
 				for embed_type in parent_typ_sym.info.embeds {
 					final_embed_sym := c.table.final_sym(embed_type)
-					if final_embed_sym.kind != .struct_ {
+					if final_embed_sym.kind != .struct {
 						c.error('cannot embed non-struct `${c.table.sym(embed_type).name}`',
 							node.type_pos)
 					}
@@ -585,7 +585,7 @@ fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
 					for field in parent_typ_sym.info.fields {
 						field_sym := c.table.sym(field.typ)
 						if field_sym.info is ast.Alias {
-							if c.table.sym(field_sym.info.parent_type).kind != .struct_ {
+							if c.table.sym(field_sym.info.parent_type).kind != .struct {
 								c.error('cannot embed non-struct `${field_sym.name}`',
 									field.type_pos)
 							}
@@ -613,7 +613,7 @@ fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
 			// type Sum = int | Alias
 			// type Alias = Sum
 		}
-		.none_ {
+		.none {
 			c.error('cannot create a type alias of `none` as it is a value', node.type_pos)
 		}
 		// The rest of the parent symbol kinds are also allowed, since they are either primitive types,
@@ -624,11 +624,11 @@ fn (mut c Checker) alias_type_decl(node ast.AliasTypeDecl) {
 		/*
 		.voidptr, .byteptr, .charptr {}
 		.char, .rune, .bool {}
-		.string, .enum_, .none_, .any {}
+		.string, .enum, .none, .any {}
 		.i8, .i16, .int, .i64, .isize {}
 		.u8, .u16, .u32, .u64, .usize {}
 		.f32, .f64 {}
-		.interface_ {}
+		.interface {}
 		.generic_inst {}
 		.aggregate {}
 		*/
@@ -680,7 +680,7 @@ fn (mut c Checker) sum_type_decl(node ast.SumTypeDecl) {
 		sym := c.table.sym(variant.typ)
 		if variant.typ.is_ptr() || (sym.info is ast.Alias && sym.info.parent_type.is_ptr()) {
 			variant_name := sym.name.all_after_last('.')
-			lb, rb := if sym.kind == .struct_ { '{', '}' } else { '(', ')' }
+			lb, rb := if sym.kind == .struct { '{', '}' } else { '(', ')' }
 			msg := if sym.info is ast.Alias && sym.info.parent_type.is_ptr() {
 				'alias as non-reference type'
 			} else {
@@ -696,9 +696,9 @@ and use a reference to the sum type instead: `var := &${node.name}(${variant_nam
 				variant.pos)
 		} else if sym.kind in [.placeholder, .int_literal, .float_literal] {
 			c.error('unknown type `${sym.name}`', variant.pos)
-		} else if sym.kind == .interface_ && sym.language != .js {
+		} else if sym.kind == .interface && sym.language != .js {
 			c.error('sum type cannot hold an interface', variant.pos)
-		} else if sym.kind == .struct_ && sym.language == .js {
+		} else if sym.kind == .struct && sym.language == .js {
 			c.error('sum type cannot hold a JS struct', variant.pos)
 		} else if sym.info is ast.Struct {
 			if sym.info.is_generic {
@@ -896,7 +896,7 @@ fn (mut c Checker) fail_if_immutable(mut expr ast.Expr) (string, token.Pos) {
 			}
 			mut typ_sym := c.table.final_sym(c.unwrap_generic(expr.expr_type))
 			match typ_sym.kind {
-				.struct_ {
+				.struct {
 					mut has_field := true
 					mut field_info := c.table.find_field_with_embeds(typ_sym, expr.field_name) or {
 						has_field = false
@@ -936,7 +936,7 @@ fn (mut c Checker) fail_if_immutable(mut expr ast.Expr) (string, token.Pos) {
 						explicit_lock_needed = true
 					}
 				}
-				.interface_ {
+				.interface {
 					interface_info := typ_sym.info as ast.Interface
 					mut field_info := interface_info.find_field(expr.field_name) or {
 						type_str := c.table.type_to_str(expr.expr_type)
@@ -1051,7 +1051,7 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 		}
 		mut inferred_type := interface_type
 		if generic_info.is_generic {
-			inferred_type = c.resolve_generic_interface(typ, generic_type, pos)
+			inferred_type = c.unwrap_generic_interface(typ, generic_type, pos)
 			if inferred_type == 0 {
 				return false
 			}
@@ -1080,12 +1080,12 @@ fn (mut c Checker) type_implements(typ ast.Type, interface_type ast.Type, pos to
 		// `none` "implements" the Error interface
 		return true
 	}
-	if typ_sym.kind == .interface_ && inter_sym.kind == .interface_ && !styp.starts_with('JS.')
+	if typ_sym.kind == .interface && inter_sym.kind == .interface && !styp.starts_with('JS.')
 		&& !inter_sym.name.starts_with('JS.') {
 		c.error('cannot implement interface `${inter_sym.name}` with a different interface `${styp}`',
 			pos)
 	}
-	imethods := if inter_sym.kind == .interface_ {
+	imethods := if inter_sym.kind == .interface {
 		(inter_sym.info as ast.Interface).methods
 	} else {
 		inter_sym.methods
@@ -1278,6 +1278,15 @@ fn (mut c Checker) check_expr_option_or_result_call(expr ast.Expr, ret_type ast.
 					c.check_or_expr(expr.or_expr, ret_type, ret_type.set_flag(.result),
 						expr)
 				}
+			} else if expr.left is ast.SelectorExpr && expr.left_type.has_option_or_result() {
+				with_modifier_kind := if expr.left_type.has_flag(.option) {
+					'an Option'
+				} else {
+					'a Result'
+				}
+				with_modifier := if expr.left_type.has_flag(.option) { '?' } else { '!' }
+				c.error('field `${expr.left.field_name}` is ${with_modifier_kind}, so it should have either an `or {}` block, or `${with_modifier}` at the end',
+					expr.left.pos)
 			}
 		}
 		ast.CastExpr {
@@ -1658,7 +1667,7 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 		if field.is_deprecated && is_used_outside {
 			c.deprecate('field', field_name, field.attrs, node.pos)
 		}
-		if field_sym.kind in [.sum_type, .interface_] {
+		if field_sym.kind in [.sum_type, .interface] {
 			if !prevent_sum_type_unwrapping_once {
 				if scope_field := node.scope.find_struct_field(node.expr.str(), typ, field_name) {
 					return scope_field.smartcasts.last()
@@ -1687,7 +1696,7 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 			if !c.inside_unsafe {
 				rec_sym := c.table.sym(receiver.set_nr_muls(0))
 				if !rec_sym.is_heap() {
-					suggestion := if rec_sym.kind == .struct_ {
+					suggestion := if rec_sym.kind == .struct {
 						'declaring `${rec_sym.name}` as `@[heap]`'
 					} else {
 						'wrapping the `${rec_sym.name}` object in a `struct` declared as `@[heap]`'
@@ -1704,7 +1713,7 @@ fn (mut c Checker) selector_expr(mut node ast.SelectorExpr) ast.Type {
 		node.typ = fn_type
 		return fn_type
 	}
-	if sym.kind !in [.struct_, .aggregate, .interface_, .sum_type] {
+	if sym.kind !in [.struct, .aggregate, .interface, .sum_type] {
 		if sym.kind != .placeholder {
 			unwrapped_sym := c.table.sym(c.unwrap_generic(typ))
 
@@ -1775,6 +1784,14 @@ fn (mut c Checker) const_decl(mut node ast.ConstDecl) {
 				len: util.no_cur_mod(field.name, c.mod).len
 			}
 			c.error('duplicate of a module name `${field.name}`', name_pos)
+		}
+		if const_name == '_' {
+			name_pos := token.Pos{
+				...field.pos
+				len: util.no_cur_mod(field.name, c.mod).len
+			}
+			c.error('cannot use `_` as a const name', name_pos)
+			return
 		}
 		c.const_names << field.name
 	}
@@ -2177,7 +2194,9 @@ fn (mut c Checker) stmt(mut node ast.Stmt) {
 					}
 				}
 			}
-			c.check_expr_option_or_result_call(node.expr, or_typ)
+			if !c.inside_return {
+				c.check_expr_option_or_result_call(node.expr, or_typ)
+			}
 			// TODO: This should work, even if it's prolly useless .-.
 			// node.typ = c.check_expr_option_or_result_call(node.expr, ast.void_type)
 		}
@@ -2305,6 +2324,10 @@ fn (mut c Checker) global_decl(mut node ast.GlobalDecl) {
 
 		if field.name in ast.global_reserved_type_names {
 			c.error('invalid use of reserved type `${field.name}` as a global name', field.pos)
+		}
+		if field.name == '_' {
+			c.error('cannot use `_` as a global name', field.pos)
+			return
 		}
 
 		if field.name in c.global_names {
@@ -2725,15 +2748,22 @@ fn (mut c Checker) unwrap_generic(typ ast.Type) ast.Type {
 	if typ.has_flag(.generic) {
 		if c.inside_generic_struct_init {
 			generic_names := c.cur_struct_generic_types.map(c.table.sym(it).name)
-			if t_typ := c.table.resolve_generic_to_concrete(typ, generic_names, c.cur_struct_concrete_types) {
+			if t_typ := c.table.convert_generic_type(typ, generic_names, c.cur_struct_concrete_types) {
 				return t_typ
 			}
 		}
 		if c.table.cur_fn != unsafe { nil } {
-			if t_typ := c.table.resolve_generic_to_concrete(typ, c.table.cur_fn.generic_names,
+			if t_typ := c.table.convert_generic_type(typ, c.table.cur_fn.generic_names,
 				c.table.cur_concrete_types)
 			{
 				return t_typ
+			}
+			if c.inside_lambda && c.table.cur_lambda.call_ctx != unsafe { nil } {
+				if t_typ := c.table.convert_generic_type(typ, c.table.cur_lambda.func.decl.generic_names,
+					c.table.cur_lambda.call_ctx.concrete_types)
+				{
+					return t_typ
+				}
 			}
 		}
 	}
@@ -2800,9 +2830,9 @@ pub fn (mut c Checker) expr(mut node ast.Expr) ast.Type {
 					c.error('cannot cast `${expr_type_sym.name}` to `${addr}${type_sym.name}`',
 						node.pos)
 				}
-			} else if expr_type_sym.kind == .interface_ {
+			} else if expr_type_sym.kind == .interface {
 				c.ensure_type_exists(node.typ, node.pos)
-				if type_sym.kind != .interface_ {
+				if type_sym.kind != .interface {
 					c.type_implements(node.typ, node.expr_type, node.pos)
 				}
 			} else if node.expr_type.clear_flag(.option) != node.typ.clear_flag(.option) {
@@ -2971,8 +3001,10 @@ pub fn (mut c Checker) expr(mut node ast.Expr) ast.Type {
 		}
 		ast.LambdaExpr {
 			c.inside_lambda = true
+			c.table.cur_lambda = unsafe { &node }
 			defer {
 				c.inside_lambda = false
+				c.table.cur_lambda = unsafe { nil }
 			}
 			return c.lambda_expr(mut node, c.expected_type)
 		}
@@ -3231,21 +3263,21 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 			tt := c.table.type_to_str(to_type)
 			c.error('cannot cast `${ft}` to `${tt}`', node.pos)
 		}
-	} else if mut to_sym.info is ast.Alias && !(final_to_sym.kind == .struct_ && final_to_is_ptr) {
+	} else if mut to_sym.info is ast.Alias && !(final_to_sym.kind == .struct && final_to_is_ptr) {
 		if (!c.check_types(from_type, to_sym.info.parent_type) && !(final_to_sym.is_int()
-			&& final_from_sym.kind in [.enum_, .bool, .i8, .u8, .char]))
-			|| (final_to_sym.kind == .struct_
+			&& final_from_sym.kind in [.enum, .bool, .i8, .u8, .char]))
+			|| (final_to_sym.kind == .struct
 			&& from_type.idx() in [ast.voidptr_type_idx, ast.nil_type_idx]) {
 			ft := c.table.type_to_str(from_type)
 			tt := c.table.type_to_str(to_type)
 			c.error('cannot cast `${ft}` to `${tt}` (alias to `${final_to_sym.name}`)',
 				node.pos)
 		}
-	} else if to_sym.kind == .struct_ && mut to_sym.info is ast.Struct
+	} else if to_sym.kind == .struct && mut to_sym.info is ast.Struct
 		&& (!to_sym.info.is_typedef || from_type.idx() in [ast.voidptr_type_idx, ast.nil_type_idx])
 		&& !final_to_is_ptr {
 		// For now we ignore C typedef because of `C.Window(C.None)` in vlib/clipboard (except for `from_type` is voidptr/nil)
-		if from_sym.kind == .struct_ && from_sym.info is ast.Struct && !from_type.is_ptr() {
+		if from_sym.kind == .struct && from_sym.info is ast.Struct && !from_type.is_ptr() {
 			if !to_type.has_flag(.option) {
 				c.warn('casting to struct is deprecated, use e.g. `Struct{...expr}` instead',
 					node.pos)
@@ -3258,7 +3290,7 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 			ft := c.table.type_to_str(from_type)
 			c.error('cannot cast `${ft}` to struct', node.pos)
 		}
-	} else if to_sym.kind == .struct_ && final_to_is_ptr {
+	} else if to_sym.kind == .struct && final_to_is_ptr {
 		if from_sym.info is ast.Alias {
 			from_type = from_sym.info.parent_type.derive_add_muls(from_type)
 		}
@@ -3290,7 +3322,7 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 			&& !c.file.is_translated {
 			c.error('cannot cast voidptr to a struct outside `unsafe`', node.pos)
 		}
-		if !from_type.is_int() && final_from_sym.kind != .enum_
+		if !from_type.is_int() && final_from_sym.kind != .enum
 			&& !from_type.is_any_kind_of_pointer() {
 			ft := c.table.type_to_str(from_type)
 			tt := c.table.type_to_str(to_type)
@@ -3298,12 +3330,12 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 		}
 	} else if !from_type.has_option_or_result() && mut to_sym.info is ast.Interface {
 		if c.type_implements(from_type, to_type, node.pos) {
-			if !from_type.is_any_kind_of_pointer() && from_sym.kind != .interface_
+			if !from_type.is_any_kind_of_pointer() && from_sym.kind != .interface
 				&& !c.inside_unsafe {
 				c.mark_as_referenced(mut &node.expr, true)
 			}
 			if to_sym.info.is_generic {
-				inferred_type := c.resolve_generic_interface(from_type, to_type, node.pos)
+				inferred_type := c.unwrap_generic_interface(from_type, to_type, node.pos)
 				if inferred_type != 0 {
 					to_type = inferred_type
 					to_sym = c.table.sym(to_type)
@@ -3322,14 +3354,14 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 	} else if from_type == ast.none_type && !to_type.has_flag(.option) && !to_type.has_flag(.result) {
 		type_name := c.table.type_to_str(to_type)
 		c.error('cannot cast `none` to `${type_name}`', node.pos)
-	} else if !from_type.has_option_or_result() && from_sym.kind == .struct_ && !from_type.is_ptr() {
-		if (final_to_is_ptr || to_sym.kind !in [.sum_type, .interface_]) && !c.is_builtin_mod {
+	} else if !from_type.has_option_or_result() && from_sym.kind == .struct && !from_type.is_ptr() {
+		if (final_to_is_ptr || to_sym.kind !in [.sum_type, .interface]) && !c.is_builtin_mod {
 			from_type_name := c.table.type_to_str(from_type)
 			type_name := c.table.type_to_str(to_type)
 			c.error('cannot cast struct `${from_type_name}` to `${type_name}`', node.pos)
 		}
 	} else if to_sym.kind == .u8 && !final_from_sym.is_number()
-		&& !from_type.is_any_kind_of_pointer() && final_from_sym.kind !in [.char, .enum_, .bool] {
+		&& !from_type.is_any_kind_of_pointer() && final_from_sym.kind !in [.char, .enum, .bool] {
 		ft := c.table.type_to_str(from_type)
 		tt := c.table.type_to_str(to_type)
 		c.error('cannot cast type `${ft}` to `${tt}`', node.pos)
@@ -3393,7 +3425,7 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 		c.error('cannot cast `${ft}` to rune, use `${snexpr}.runes()` instead.', node.pos)
 	}
 
-	if to_sym.kind == .enum_ && !(c.inside_unsafe || c.file.is_translated) && from_sym.is_int() {
+	if to_sym.kind == .enum && !(c.inside_unsafe || c.file.is_translated) && from_sym.is_int() {
 		c.error('casting numbers to enums, should be done inside `unsafe{}` blocks', node.pos)
 	}
 
@@ -3434,7 +3466,7 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 				c.error('cannot cast array to string, use `${snexpr}${first_elem_idx}.str()` instead.',
 					node.pos)
 			}
-		} else if final_from_sym.kind == .enum_ {
+		} else if final_from_sym.kind == .enum {
 			snexpr := node.expr.str()
 			c.error('cannot cast enum to string, use ${snexpr}.str() instead.', node.pos)
 		} else if final_from_sym.kind == .map {
@@ -3486,8 +3518,8 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 		}
 	}
 	if from_sym.language == .v && !from_type.is_ptr()
-		&& final_from_sym.kind in [.sum_type, .interface_]
-		&& final_to_sym.kind !in [.sum_type, .interface_] {
+		&& final_from_sym.kind in [.sum_type, .interface]
+		&& final_to_sym.kind !in [.sum_type, .interface] {
 		ft := c.table.type_to_str(from_type)
 		tt := c.table.type_to_str(to_type)
 		kind_name := if from_sym.kind == .sum_type { 'sum type' } else { 'interface' }
@@ -3500,7 +3532,7 @@ fn (mut c Checker) cast_expr(mut node ast.CastExpr) ast.Type {
 	}
 
 	// checks on int literal to enum cast if the value represents a value on the enum
-	if to_sym.kind == .enum_ {
+	if to_sym.kind == .enum {
 		if mut node.expr is ast.IntegerLiteral {
 			enum_typ_name := c.table.get_type_name(to_type)
 			node_val := node.expr.val.i64()
@@ -3690,11 +3722,11 @@ struct ACFieldMethod {
 	typ  string
 }
 
-fn (mut c Checker) resolve_var_fn(func ast.Fn, mut node ast.Ident, name string) ast.Type {
+fn (mut c Checker) resolve_var_fn(func &ast.Fn, mut node ast.Ident, name string) ast.Type {
 	mut fn_type := ast.new_type(c.table.find_or_register_fn_type(func, false, true))
 	if func.generic_names.len > 0 {
 		concrete_types := node.concrete_types.map(c.unwrap_generic(it))
-		if typ_ := c.table.resolve_generic_to_concrete(fn_type, func.generic_names, concrete_types) {
+		if typ_ := c.table.convert_generic_type(fn_type, func.generic_names, concrete_types) {
 			fn_type = typ_
 			if concrete_types.all(!it.has_flag(.generic)) {
 				c.table.register_fn_concrete_types(func.fkey(), concrete_types)
@@ -4068,7 +4100,7 @@ fn (mut c Checker) concat_expr(mut node ast.ConcatExpr) ast.Type {
 fn (mut c Checker) smartcast(mut expr ast.Expr, cur_type ast.Type, to_type_ ast.Type, mut scope ast.Scope,
 	is_comptime bool) {
 	sym := c.table.sym(cur_type)
-	to_type := if sym.kind == .interface_ && c.table.sym(to_type_).kind != .interface_ {
+	to_type := if sym.kind == .interface && c.table.sym(to_type_).kind != .interface {
 		to_type_.ref()
 	} else {
 		to_type_
@@ -4366,7 +4398,7 @@ fn (mut c Checker) mark_as_referenced(mut node ast.Expr, as_interface bool) {
 				type_sym := c.table.sym(obj.typ.set_nr_muls(0))
 				if obj.is_stack_obj && !type_sym.is_heap() && !c.pref.translated
 					&& !c.file.is_translated {
-					suggestion := if type_sym.kind == .struct_ {
+					suggestion := if type_sym.kind == .struct {
 						'declaring `${type_sym.name}` as `@[heap]`'
 					} else {
 						'wrapping the `${type_sym.name}` object in a `struct` declared as `@[heap]`'
@@ -4379,13 +4411,13 @@ fn (mut c Checker) mark_as_referenced(mut node ast.Expr, as_interface bool) {
 						node.pos)
 				} else {
 					match type_sym.kind {
-						.struct_ {
+						.struct {
 							info := type_sym.info as ast.Struct
 							if !info.is_heap {
 								node.obj.is_auto_heap = true
 							}
 						}
-						.sum_type, .interface_ {}
+						.sum_type, .interface {}
 						.function {
 							if type_sym.info is ast.FnType {
 								if type_sym.info.is_anon {
@@ -4449,8 +4481,8 @@ fn (mut c Checker) prefix_expr(mut node ast.PrefixExpr) ast.Type {
 			}
 			right_sym := c.table.sym(right_type)
 			expr_sym := c.table.sym(node.right.expr_type)
-			if expr_sym.kind == .struct_ && (expr_sym.info as ast.Struct).is_minify
-				&& (node.right.typ == ast.bool_type_idx || (right_sym.kind == .enum_
+			if expr_sym.kind == .struct && (expr_sym.info as ast.Struct).is_minify
+				&& (node.right.typ == ast.bool_type_idx || (right_sym.kind == .enum
 				&& !(right_sym.info as ast.Enum).is_flag
 				&& !(right_sym.info as ast.Enum).uses_exprs)) {
 				c.error('cannot take the address of field in struct `${c.table.type_to_str(node.right.expr_type)}`, which is tagged as `@[minify]`',
@@ -4586,7 +4618,7 @@ fn (mut c Checker) check_index(typ_sym &ast.TypeSymbol, index ast.Expr, index_ty
 	range_index bool, is_gated bool) {
 	if typ_sym.kind in [.array, .array_fixed, .string] {
 		index_type_sym := c.table.sym(index_type)
-		if !(index_type.is_int() || index_type_sym.kind == .enum_
+		if !(index_type.is_int() || index_type_sym.kind == .enum
 			|| (index_type_sym.kind == .alias
 			&& (index_type_sym.info as ast.Alias).parent_type.is_int())
 			|| (c.pref.translated && index_type.is_any_kind_of_pointer())) {
@@ -4654,7 +4686,7 @@ fn (mut c Checker) index_expr(mut node ast.IndexExpr) ast.Type {
 	is_aggregate_arr := typ_sym.kind == .aggregate
 		&& (typ_sym.info as ast.Aggregate).types.filter(c.table.type_kind(it) !in [.array, .array_fixed, .string, .map]).len == 0
 	if typ_sym.kind !in [.array, .array_fixed, .string, .map]
-		&& (!typ.is_ptr() || typ_sym.kind in [.sum_type, .interface_])
+		&& (!typ.is_ptr() || typ_sym.kind in [.sum_type, .interface])
 		&& typ !in [ast.byteptr_type, ast.charptr_type] && !typ.has_flag(.variadic)
 		&& !is_aggregate_arr {
 		c.error('type `${typ_sym.name}` does not support indexing', node.pos)
@@ -4684,18 +4716,18 @@ fn (mut c Checker) index_expr(mut node ast.IndexExpr) ast.Type {
 		&& typ_sym.kind == .map && node.or_expr.stmts.len == 0 {
 		elem_type := c.table.value_type(typ)
 		if elem_type.is_any_kind_of_pointer() {
-			c.note('accessing a pointer map value requires an `or {}` block outside `unsafe`',
+			c.warn('accessing a pointer map value requires an `or {}` block outside `unsafe`',
 				node.pos)
 		}
 		mut checked_types := []ast.Type{}
 		if c.is_contains_any_kind_of_pointer(elem_type, mut checked_types) {
-			c.note('accessing map value that contain pointers requires an `or {}` block outside `unsafe`',
+			c.warn('accessing map value that contain pointers requires an `or {}` block outside `unsafe`',
 				node.pos)
 		}
 	}
 
-	if (typ.is_ptr() && !typ.has_flag(.shared_f) && (!node.left.is_auto_deref_var()
-		|| (typ_sym.kind == .struct_ && typ_sym.name != 'array')))
+	if (typ.is_ptr() && !typ.has_flag(.shared_f)
+		&& (!node.left.is_auto_deref_var() || (typ_sym.kind == .struct && typ_sym.name != 'array')))
 		|| typ.is_pointer() {
 		mut is_ok := false
 		mut is_mut_struct := false
@@ -4703,10 +4735,10 @@ fn (mut c Checker) index_expr(mut node ast.IndexExpr) ast.Type {
 			if mut node.left.obj is ast.Var {
 				// `mut param []T` function parameter
 				is_ok = node.left.obj.is_mut && node.left.obj.is_arg && !typ.deref().is_ptr()
-					&& typ_sym.kind != .struct_
+					&& typ_sym.kind != .struct
 				// `mut param Struct`
 				is_mut_struct = node.left.obj.is_mut && node.left.obj.is_arg
-					&& typ_sym.kind == .struct_
+					&& typ_sym.kind == .struct
 			}
 		}
 		if !is_ok && node.index is ast.RangeExpr {
@@ -4715,7 +4747,7 @@ fn (mut c Checker) index_expr(mut node ast.IndexExpr) ast.Type {
 		} else if is_mut_struct {
 			c.error('type `mut ${typ_sym.name}` does not support slicing', node.pos)
 		} else if !c.inside_unsafe && !is_ok && !c.pref.translated && !c.file.is_translated {
-			c.warn('pointer indexing is only allowed in `unsafe` blocks', node.pos)
+			c.error('pointer indexing is only allowed in `unsafe` blocks', node.pos)
 		}
 	}
 	if mut node.index is ast.RangeExpr { // [1..2]
@@ -4822,7 +4854,7 @@ fn (mut c Checker) enum_val(mut node ast.EnumVal) ast.Type {
 		typ_sym = c.table.sym(typ)
 	}
 	fsym := c.table.final_sym(typ)
-	if fsym.kind != .enum_ && !c.pref.translated && !c.file.is_translated {
+	if fsym.kind != .enum && !c.pref.translated && !c.file.is_translated {
 		// TODO: in C int fields can be compared to enums, need to handle that in C2V
 		if typ_sym.kind == .placeholder {
 			// If it's a placeholder, the type doesn't exist, print
@@ -4872,7 +4904,7 @@ fn (mut c Checker) chan_init(mut node ast.ChanInit) ast.Type {
 
 fn (mut c Checker) offset_of(node ast.OffsetOf) ast.Type {
 	sym := c.table.final_sym(node.struct_type)
-	if sym.kind != .struct_ {
+	if sym.kind != .struct {
 		c.error('first argument of __offsetof must be struct', node.pos)
 		return ast.u32_type
 	}
@@ -4959,13 +4991,13 @@ fn (mut c Checker) fetch_field_name(field ast.StructField) string {
 		}
 	}
 	sym := c.table.sym(field.typ)
-	if sym.kind == .struct_ && sym.name != 'time.Time' {
+	if sym.kind == .struct && sym.name != 'time.Time' {
 		name = '${name}_id'
 	}
 	return name
 }
 
-fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos token.Pos) bool {
+fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos token.Pos, is_container_typ bool, is_generic_container bool) bool {
 	if typ == 0 {
 		c.error('unknown type', pos)
 		return false
@@ -4991,45 +5023,53 @@ fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos toke
 	match sym.kind {
 		.function {
 			fn_info := sym.info as ast.FnType
-			if !c.ensure_generic_type_specify_type_names(fn_info.func.return_type, fn_info.func.return_type_pos) {
+			if !c.ensure_generic_type_specify_type_names(fn_info.func.return_type, fn_info.func.return_type_pos,
+				is_container_typ, is_generic_container) {
 				return false
 			}
 			for param in fn_info.func.params {
-				if !c.ensure_generic_type_specify_type_names(param.typ, param.type_pos) {
+				if !c.ensure_generic_type_specify_type_names(param.typ, param.type_pos,
+					is_container_typ, is_generic_container) {
 					return false
 				}
+			}
+			if fn_info.func.generic_names.len > 0 && !typ.has_flag(.generic) {
+				c.error('`${sym.name}` type is generic fn type, must specify the generic type names, e.g. ${sym.name}[T], ${sym.name}[int]',
+					pos)
+				return false
 			}
 		}
 		.array {
 			if !c.ensure_generic_type_specify_type_names((sym.info as ast.Array).elem_type,
-				pos) {
+				pos, true, typ.has_flag(.generic)) {
 				return false
 			}
 		}
 		.array_fixed {
 			if !c.ensure_generic_type_specify_type_names((sym.info as ast.ArrayFixed).elem_type,
-				pos) {
+				pos, true, typ.has_flag(.generic)) {
 				return false
 			}
 		}
 		.map {
 			info := sym.info as ast.Map
-			if !c.ensure_generic_type_specify_type_names(info.key_type, pos) {
+			if !c.ensure_generic_type_specify_type_names(info.key_type, pos, true, typ.has_flag(.generic)) {
 				return false
 			}
-			if !c.ensure_generic_type_specify_type_names(info.value_type, pos) {
+			if !c.ensure_generic_type_specify_type_names(info.value_type, pos, true, typ.has_flag(.generic)) {
 				return false
 			}
 		}
 		.sum_type {
 			info := sym.info as ast.SumType
-			if info.generic_types.len > 0 && !typ.has_flag(.generic) && info.concrete_types.len == 0 {
+			if info.generic_types.len > 0 && ((is_container_typ && !is_generic_container)
+				|| !typ.has_flag(.generic)) && info.concrete_types.len == 0 {
 				c.error('`${sym.name}` type is generic sumtype, must specify the generic type names, e.g. ${sym.name}[T], ${sym.name}[int]',
 					pos)
 				return false
 			}
 		}
-		.struct_ {
+		.struct {
 			info := sym.info as ast.Struct
 			if info.generic_types.len > 0 && !typ.has_flag(.generic) && info.concrete_types.len == 0 {
 				c.error('`${sym.name}` type is generic struct, must specify the generic type names, e.g. ${sym.name}[T], ${sym.name}[int]',
@@ -5037,11 +5077,18 @@ fn (mut c Checker) ensure_generic_type_specify_type_names(typ ast.Type, pos toke
 				return false
 			}
 		}
-		.interface_ {
+		.interface {
 			info := sym.info as ast.Interface
 			if info.generic_types.len > 0 && !typ.has_flag(.generic) && info.concrete_types.len == 0 {
 				c.error('`${sym.name}` type is generic interface, must specify the generic type names, e.g. ${sym.name}[T], ${sym.name}[int]',
 					pos)
+				return false
+			}
+		}
+		.alias {
+			info := sym.info as ast.Alias
+			if !c.ensure_generic_type_specify_type_names(info.parent_type, pos, is_container_typ,
+				is_generic_container) {
 				return false
 			}
 		}
@@ -5065,7 +5112,7 @@ fn (mut c Checker) ensure_type_exists(typ ast.Type, pos token.Pos) bool {
 		return false
 	}
 	sym := c.table.sym(typ)
-	if !c.is_builtin_mod && sym.kind == .struct_ && !sym.is_pub && sym.mod != c.mod {
+	if !c.is_builtin_mod && sym.kind == .struct && !sym.is_pub && sym.mod != c.mod {
 		c.error('struct `${sym.name}` was declared as private to module `${sym.mod}`, so it can not be used inside module `${c.mod}`',
 			pos)
 		return false
@@ -5230,7 +5277,7 @@ fn (mut c Checker) fail_if_stack_struct_action_outside_unsafe(mut ident ast.Iden
 		if obj.is_stack_obj && !c.inside_unsafe {
 			sym := c.table.sym(obj.typ.set_nr_muls(0))
 			if !sym.is_heap() && !c.pref.translated && !c.file.is_translated {
-				suggestion := if sym.kind == .struct_ {
+				suggestion := if sym.kind == .struct {
 					'declaring `${sym.name}` as `@[heap]`'
 				} else {
 					'wrapping the `${sym.name}` object in a `struct` declared as `@[heap]`'

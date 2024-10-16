@@ -57,7 +57,7 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 	if sym.kind == .array_fixed {
 		arr_info := sym.array_fixed_info()
 		is_array_fixed_struct_init = g.inside_return
-			&& g.table.final_sym(arr_info.elem_type).kind == .struct_
+			&& g.table.final_sym(arr_info.elem_type).kind == .struct
 	}
 
 	// detect if we need type casting on msvc initialization
@@ -145,14 +145,14 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 			g.is_shared = false
 		}
 		mut field_name := init_field.name
-		if node.no_keys && sym.kind == .struct_ {
+		if node.no_keys && sym.kind == .struct {
 			info := sym.info as ast.Struct
 			if info.fields.len == node.init_fields.len {
 				field_name = info.fields[i].name
 			}
 		}
 		inited_fields[field_name] = i
-		if sym.kind != .struct_ && (sym.kind == .string || !sym.is_primitive()) {
+		if sym.kind != .struct && (sym.kind == .string || !sym.is_primitive()) {
 			if init_field.typ == 0 {
 				g.checker_bug('struct init, field.typ is 0', init_field.pos)
 			}
@@ -172,7 +172,7 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 	// The rest of the fields are zeroed.
 	// `inited_fields` is a list of fields that have been init'ed, they are skipped
 	mut nr_fields := 1
-	if sym.kind == .struct_ {
+	if sym.kind == .struct {
 		mut info := sym.info as ast.Struct
 		nr_fields = info.fields.len
 		if info.is_union && node.init_fields.len > 1 {
@@ -253,7 +253,7 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 									t_concrete_types << g.cur_concrete_types[index]
 								}
 							} else {
-								if tt := g.table.resolve_generic_to_concrete(t_typ, g.table.cur_fn.generic_names,
+								if tt := g.table.convert_generic_type(t_typ, g.table.cur_fn.generic_names,
 									g.cur_concrete_types)
 								{
 									t_concrete_types << tt
@@ -261,13 +261,13 @@ fn (mut g Gen) struct_init(node ast.StructInit) {
 							}
 						}
 					}
-					if tt := g.table.resolve_generic_to_concrete(sfield.expected_type,
-						t_generic_names, t_concrete_types)
+					if tt := g.table.convert_generic_type(sfield.expected_type, t_generic_names,
+						t_concrete_types)
 					{
 						sfield.expected_type = tt
 					}
 				}
-				if node.no_keys && sym.kind == .struct_ {
+				if node.no_keys && sym.kind == .struct {
 					sym_info := sym.info as ast.Struct
 					if sym_info.fields.len == node.init_fields.len {
 						sfield.name = sym_info.fields[already_inited_node_field_index].name
@@ -387,6 +387,7 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 		g.inside_cast_in_heap = old_inside_cast_in_heap
 	}
 	sym := g.table.sym(field.typ)
+	final_sym := g.table.final_sym(field.typ)
 	field_name := if sym.language == .v { c_name(field.name) } else { field.name }
 	if sym.info is ast.Struct {
 		if sym.info.fields.len == 0 {
@@ -428,7 +429,7 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 	}
 	g.write('.${field_name} = ')
 	if field.has_default_expr {
-		if sym.kind in [.sum_type, .interface_] {
+		if sym.kind in [.sum_type, .interface] {
 			if field.typ.has_flag(.option) {
 				g.expr_with_opt(field.default_expr, field.default_expr_typ, field.typ)
 			} else {
@@ -449,6 +450,26 @@ fn (mut g Gen) zero_struct_field(field ast.StructField) bool {
 			tmp_var := g.new_tmp_var()
 			g.expr_with_tmp_var(field.default_expr, field.default_expr_typ, field.typ,
 				tmp_var)
+			return true
+		} else if final_sym.info is ast.ArrayFixed && field.default_expr !is ast.ArrayInit {
+			tmp_var := g.new_tmp_var()
+			s := g.go_before_last_stmt()
+			g.empty_line = true
+			styp := g.typ(field.typ)
+			g.writeln('${styp} ${tmp_var} = {0};')
+			g.write('memcpy(${tmp_var}, ')
+			g.expr(field.default_expr)
+			g.writeln(', sizeof(${styp}));')
+			g.empty_line = false
+			g.write(s)
+			g.write('{')
+			for i in 0 .. final_sym.info.size {
+				g.write('${tmp_var}[${i}]')
+				if i != final_sym.info.size - 1 {
+					g.write(', ')
+				}
+			}
+			g.write('}')
 			return true
 		}
 		g.expr(field.default_expr)

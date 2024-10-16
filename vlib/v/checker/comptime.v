@@ -246,7 +246,7 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 		return
 	}
 	if node.kind == .fields {
-		if sym.kind in [.struct_, .interface_] {
+		if sym.kind in [.struct, .interface] {
 			mut fields := []ast.StructField{}
 			match sym.info {
 				ast.Struct {
@@ -294,7 +294,7 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 			return
 		}
 	} else if node.kind == .values {
-		if sym.kind == .enum_ {
+		if sym.kind == .enum {
 			c.push_new_comptime_info()
 			c.comptime.inside_comptime_for = true
 			if c.enum_data_type == 0 {
@@ -326,6 +326,11 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 			c.pop_comptime_info()
 		}
 	} else if node.kind == .params {
+		if !(sym.kind == .function || sym.name == 'FunctionData') {
+			c.error('iterating over `.params` is supported only for functions, and `${sym.name}` is not a function',
+				node.typ_pos)
+			return
+		}
 		c.push_new_comptime_info()
 		c.comptime.inside_comptime_for = true
 		c.comptime.comptime_for_method_param_var = node.val_var
@@ -592,7 +597,7 @@ fn (mut c Checker) eval_comptime_const_expr(expr ast.Expr, nlevel int) ?ast.Comp
 	return none
 }
 
-fn (mut c Checker) verify_vweb_params_for_method(node ast.Fn) (bool, int, int) {
+fn (mut c Checker) verify_vweb_params_for_method(node &ast.Fn) (bool, int, int) {
 	margs := node.params.len - 1 // first arg is the receiver/this
 	// if node.attrs.len == 0 || (node.attrs.len == 1 && node.attrs[0].name == 'post') {
 	if node.attrs.len == 0 {
@@ -767,7 +772,7 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 					if cond.left is ast.TypeNode && mut cond.right is ast.TypeNode {
 						// `$if Foo is Interface {`
 						sym := c.table.sym(cond.right.typ)
-						if sym.kind != .interface_ {
+						if sym.kind != .interface {
 							c.expr(mut cond.left)
 						}
 						return .unknown
@@ -780,7 +785,7 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 							.skip
 						}
 					} else if cond.left in [ast.Ident, ast.SelectorExpr, ast.TypeNode] {
-						// `$if method.@type is string`
+						// `$if method.type is string`
 						c.expr(mut cond.left)
 						if cond.left is ast.SelectorExpr
 							&& c.comptime.is_comptime_selector_type(cond.left)

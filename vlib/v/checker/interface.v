@@ -35,7 +35,7 @@ fn (mut c Checker) interface_decl(mut node ast.InterfaceDecl) {
 				if embed.typ.has_flag(.generic) {
 					has_generic_types = true
 				}
-				if isym.kind != .interface_ {
+				if isym.kind != .interface {
 					c.error('interface `${node.name}` tries to embed `${isym.name}`, but `${isym.name}` is not an interface, but `${isym.kind}`',
 						embed.pos)
 					continue
@@ -233,7 +233,7 @@ fn (mut c Checker) interface_decl(mut node ast.InterfaceDecl) {
 	}
 }
 
-fn (mut c Checker) resolve_generic_interface(typ ast.Type, interface_type ast.Type, pos token.Pos) ast.Type {
+fn (mut c Checker) unwrap_generic_interface(typ ast.Type, interface_type ast.Type, pos token.Pos) ast.Type {
 	utyp := c.unwrap_generic(typ)
 	typ_sym := c.table.sym(utyp)
 	mut inter_sym := c.table.sym(interface_type)

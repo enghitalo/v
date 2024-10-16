@@ -164,8 +164,7 @@ fn (mut c Checker) return_stmt(mut node ast.Return) {
 			mut expr_ := node.exprs[0]
 			got_type := c.expr(mut expr_)
 			got_type_sym := c.table.sym(got_type)
-			if got_type_sym.kind == .struct_
-				&& c.type_implements(got_type, ast.error_type, node.pos) {
+			if got_type_sym.kind == .struct && c.type_implements(got_type, ast.error_type, node.pos) {
 				node.exprs[0] = ast.CastExpr{
 					expr:      node.exprs[0]
 					typname:   'IError'
@@ -226,9 +225,9 @@ fn (mut c Checker) return_stmt(mut node ast.Return) {
 					}
 				}
 			} else {
-				if exp_type_sym.kind == .interface_ {
+				if exp_type_sym.kind == .interface {
 					if c.type_implements(got_type, exp_type, node.pos) {
-						if !got_type.is_any_kind_of_pointer() && got_type_sym.kind != .interface_
+						if !got_type.is_any_kind_of_pointer() && got_type_sym.kind != .interface
 							&& !c.inside_unsafe {
 							c.mark_as_referenced(mut &node.exprs[expr_idxs[i]], true)
 						}
@@ -244,7 +243,7 @@ fn (mut c Checker) return_stmt(mut node ast.Return) {
 					}
 				}
 				// `fn foo() !int { return Err{} }`
-				if got_type_sym.kind == .struct_
+				if got_type_sym.kind == .struct
 					&& c.type_implements(got_type, ast.error_type, node.pos) {
 					node.exprs[expr_idxs[i]] = ast.CastExpr{
 						expr:      node.exprs[expr_idxs[i]]
@@ -261,9 +260,8 @@ fn (mut c Checker) return_stmt(mut node ast.Return) {
 				} else {
 					got_type_sym.name
 				}
-				// ignore generic casting expr on lambda in this phase
-				if c.inside_lambda && exp_type.has_flag(.generic)
-					&& node.exprs[expr_idxs[i]] is ast.CastExpr {
+				// ignore generic lambda return in this phase
+				if c.inside_lambda && exp_type.has_flag(.generic) {
 					continue
 				}
 				c.error('cannot use `${got_type_name}` as ${c.error_type_name(exp_type)} in return argument',
@@ -369,8 +367,9 @@ fn (mut c Checker) check_noreturn_fn_decl(mut node ast.FnDecl) {
 	if uses_return_stmt(node.stmts) {
 		c.error('[noreturn] functions cannot use return statements', node.pos)
 	}
+	mut pos := node.pos
+	mut is_valid_end_of_noreturn_fn := false
 	if node.stmts.len != 0 {
-		mut is_valid_end_of_noreturn_fn := false
 		last_stmt := node.stmts.last()
 		match last_stmt {
 			ast.ExprStmt {
@@ -393,10 +392,12 @@ fn (mut c Checker) check_noreturn_fn_decl(mut node ast.FnDecl) {
 			else {}
 		}
 		if !is_valid_end_of_noreturn_fn {
-			c.error('@[noreturn] functions should end with a call to another @[noreturn] function, or with an infinite `for {}` loop',
-				last_stmt.pos)
-			return
+			pos = last_stmt.pos
 		}
+	}
+	if !is_valid_end_of_noreturn_fn {
+		c.error('@[noreturn] functions should end with a call to another @[noreturn] function, or with an infinite `for {}` loop',
+			pos)
 	}
 }
 

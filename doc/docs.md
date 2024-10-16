@@ -1,6 +1,8 @@
 # V Documentation
 
 (See https://modules.vlang.io/ for documentation of V's standard library)
+(See also https://docs.vlang.io/introduction.html, which has the same information as this document,
+but split in separate pages for each section, for easier reading on mobile devices)
 
 ## Introduction
 
@@ -219,6 +221,7 @@ by using any of the following commands in a terminal:
 * [Appendices](#appendices)
     * [Keywords](#appendix-i-keywords)
     * [Operators](#appendix-ii-operators)
+    * [Other online resources](#other-online-resources)
 
 </td></tr>
 </table>
@@ -4067,7 +4070,7 @@ Only one `Option` or `Result` is allowed to be returned from a function. It is
 possible to return multiple values and still signal an error.
 
 ```v
-fn multireturn(v int) !(int, int) {
+fn multi_return(v int) !(int, int) {
 	if v < 0 {
 		return error('must be positive')
 	}
@@ -6707,16 +6710,16 @@ struct Node {
 }
 
 // Reference fields must be initialized unless an initial value is declared.
-// Zero (0) is OK but use with caution, it's a nil pointer.
+// Nil is OK but use with caution, it's a nil pointer.
 foo := Node{
-	a: 0
+	a: unsafe { nil }
 }
 bar := Node{
 	a: &foo
 }
 baz := Node{
-	a: 0
-	b: 0
+	a: unsafe { nil }
+	b: unsafe { nil }
 }
 qux := Node{
 	a: &foo
@@ -8066,3 +8069,39 @@ Assignment Operators
 >>=  <<=  >>>=
 &&= ||=
 ```
+
+## Other online resources
+
+### [V contributing guide](https://github.com/vlang/v/blob/master/CONTRIBUTING.md)
+
+V would be much less, than what it is today, without the help of all
+its contributors. If you like and want to help the V project succeed,
+please read that document, choose a task, and dive in!
+
+### [V language documentation](https://docs.vlang.io/introduction.html)
+The site has the same information as this document, but split to pages,
+for easier reading on mobile devices. Updated automatically on each
+commit to the main repository.
+
+### [V standard module documentation](https://modules.vlang.io/)
+The site has the documentation of all the modules in V's standard
+library (vlib). Updated automatically on each commit to the main
+repository.
+
+### [V online playground](https://play.vlang.io/)
+The site allows you to enter and edit small V programs, then compile
+and run them. Updated automatically on each commit to the main
+repository. Use it, to test your ideas, when you do not have access
+to a computer or an Android phone, where V has been already installed.
+
+### [Awesome V](https://github.com/vlang/awesome-v)
+When you make a cool new project or a library, you can submit it to that
+list too. You can also use the list, for ideas about new projects to do
+with V.
+
+### [The V language Discord](https://discord.gg/vlang)
+This is the place to be, to discuss the V language, learn about latest
+developments, quickly get help with issues, witness/participate in
+~~epic flame wars~~ constructive criticism exchanges and design decisions.
+Join it, and learn more about languages, games, editors, people, Klingons,
+Conway's law and the universe.

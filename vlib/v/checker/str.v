@@ -31,7 +31,7 @@ fn (mut c Checker) get_default_fmt(ftyp ast.Type, typ ast.Type) u8 {
 			return `s`
 		}
 		if ftyp in [ast.string_type, ast.bool_type]
-			|| sym.kind in [.enum_, .array, .array_fixed, .struct_, .map, .multi_return, .sum_type, .interface_, .none_]
+			|| sym.kind in [.enum, .array, .array_fixed, .struct, .map, .multi_return, .sum_type, .interface, .none]
 			|| ftyp.has_option_or_result() || sym.has_method('str') {
 			return `s`
 		} else {
@@ -75,7 +75,7 @@ fn (mut c Checker) string_inter_lit(mut node ast.StringInterLiteral) ast.Type {
 		if fmt == `_` { // set default representation for type if none has been given
 			fmt = c.get_default_fmt(ftyp, typ)
 			if fmt == `_` {
-				if typ != ast.void_type {
+				if typ != ast.void_type && !(c.inside_lambda && typ.has_flag(.generic)) {
 					c.error('no known default format for type `${c.table.get_type_name(ftyp)}`',
 						node.fmt_poss[i])
 				}
@@ -105,7 +105,7 @@ fn (mut c Checker) string_inter_lit(mut node ast.StringInterLiteral) ast.Type {
 				c.error('illegal format specifier `${fmt:c}` for type `${c.table.get_type_name(ftyp)}`',
 					node.fmt_poss[i])
 			}
-			if c.table.final_sym(typ).kind in [.array, .array_fixed, .struct_, .interface_, .none_, .map, .sum_type]
+			if c.table.final_sym(typ).kind in [.array, .array_fixed, .struct, .interface, .none, .map, .sum_type]
 				&& fmt in [`E`, `F`, `G`, `e`, `f`, `g`, `d`, `u`, `x`, `X`, `o`, `c`, `p`, `b`, `r`, `R`]
 				&& !(typ.is_ptr() && fmt in [`p`, `x`, `X`]) {
 				c.error('illegal format specifier `${fmt:c}` for type `${c.table.get_type_name(ftyp)}`',
@@ -143,7 +143,10 @@ fn (mut c Checker) string_lit(mut node ast.StringLiteral) ast.Type {
 				start_idx := idx
 				idx++
 				next_ch := node.val[idx] or { return ast.string_type }
-				if next_ch == `u` {
+				if next_ch == `\\` {
+					// ignore escaping char
+					idx++
+				} else if next_ch == `u` {
 					idx++
 					mut ch := node.val[idx] or { return ast.string_type }
 					mut hex_char_count := 0

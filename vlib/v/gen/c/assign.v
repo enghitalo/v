@@ -490,7 +490,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 			mut op_expected_left := ast.no_type
 			mut op_expected_right := ast.no_type
 			is_shared_re_assign := !is_decl && node.left_types[i].has_flag(.shared_f)
-				&& left is ast.Ident && left_sym.kind in [.array, .map, .struct_]
+				&& left is ast.Ident && left_sym.kind in [.array, .map, .struct]
 			if node.op == .plus_assign && unaliased_right_sym.kind == .string {
 				if mut left is ast.IndexExpr {
 					if g.table.sym(left.left_type).kind == .array_fixed {
@@ -515,7 +515,7 @@ fn (mut g Gen) assign_stmt(node_ ast.AssignStmt) {
 				str_add = true
 			}
 			// Assignment Operator Overloading
-			if ((left_sym.kind == .struct_ && right_sym.kind == .struct_)
+			if ((left_sym.kind == .struct && right_sym.kind == .struct)
 				|| (left_sym.kind == .alias && right_sym.kind == .alias))
 				&& node.op in [.plus_assign, .minus_assign, .div_assign, .mult_assign, .mod_assign] {
 				extracted_op := match node.op {
@@ -910,7 +910,7 @@ fn (mut g Gen) gen_multi_return_assign(node &ast.AssignStmt, return_type ast.Typ
 			}
 		} else {
 			g.expr(lx)
-			sym := g.table.sym(node.left_types[i])
+			sym := g.table.final_sym(node.left_types[i])
 			if sym.kind == .array_fixed {
 				g.writeln(';')
 				g.writeln('memcpy(&${g.expr_string(lx)}, &${mr_var_name}.arg${i}, sizeof(${styp}));')
@@ -1170,7 +1170,7 @@ fn (mut g Gen) gen_cross_tmp_variable(left []ast.Expr, val ast.Expr) {
 		}
 		ast.CallExpr {
 			if val.is_method {
-				unwrapped_rec_type, typ_sym := g.resolve_receiver_type(val)
+				unwrapped_rec_type, typ_sym := g.unwrap_receiver_type(val)
 				left_type := g.unwrap_generic(val.left_type)
 				left_sym := g.table.sym(left_type)
 				final_left_sym := g.table.final_sym(left_type)

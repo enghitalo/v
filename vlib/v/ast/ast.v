@@ -141,16 +141,16 @@ pub mut:
 
 pub enum ComptimeTypeKind {
 	unknown
-	map_
+	map
 	int
 	float
-	struct_
+	struct
 	iface
 	array
 	array_fixed
 	array_dynamic
 	sum_type
-	enum_
+	enum
 	alias
 	function
 	option
@@ -166,16 +166,16 @@ pub:
 pub fn (cty ComptimeType) str() string {
 	return match cty.kind {
 		.unknown { '\$unknown' }
-		.map_ { '\$map' }
+		.map { '\$map' }
 		.int { '\$int' }
 		.float { '\$float' }
-		.struct_ { '\$struct' }
+		.struct { '\$struct' }
 		.iface { '\$interface' }
 		.array { '\$array' }
 		.array_dynamic { '\$array_dynamic' }
 		.array_fixed { '\$array_fixed' }
 		.sum_type { '\$sumtype' }
-		.enum_ { '\$enum' }
+		.enum { '\$enum' }
 		.alias { '\$alias' }
 		.function { '\$function' }
 		.option { '\$option' }
@@ -409,6 +409,7 @@ pub struct StructDecl {
 pub:
 	pos           token.Pos
 	name          string
+	scoped_name   string
 	generic_types []Type
 	is_pub        bool
 	// _pos fields for vfmt
@@ -560,6 +561,7 @@ pub:
 	is_deprecated         bool
 	is_pub                bool
 	is_c_variadic         bool
+	is_c_extern           bool
 	is_variadic           bool
 	is_anon               bool
 	is_noreturn           bool        // true, when @[noreturn] is used on a fn
@@ -615,6 +617,8 @@ pub mut:
 	scope       &Scope = unsafe { nil }
 	label_names []string
 	pos         token.Pos // function declaration position
+	//
+	is_expand_simple_interpolation bool // true, when @[expand_simple_interpolation] is used on a fn. It should have a single string argument.
 }
 
 pub fn (f &FnDecl) new_method_with_receiver_type(new_type_ Type) FnDecl {
@@ -687,6 +691,10 @@ pub mut:
 	ctdefine_idx       int      // the index of the attribute, containing the compile time define [if mytag]
 	from_embedded_type Type     // for interface only, fn from the embedded interface
 	from_embeded_type  Type @[deprecated: 'use from_embedded_type instead'; deprecated_after: '2024-03-31']
+	//
+	is_expand_simple_interpolation bool // for tagging b.f(s string), which is then called with `b.f('some $x $y')`,
+	// when that call, should be expanded to `b.f('some '); b.f(x); b.f(' '); b.f(y);`
+	// Note: the same type, has to support also a .write_decimal(n i64) method.
 }
 
 fn (f &Fn) method_equals(o &Fn) bool {
@@ -810,6 +818,10 @@ pub mut:
 	scope                  &Scope = unsafe { nil }
 	from_embed_types       []Type // holds the type of the embed that the method is called from
 	comments               []Comment
+	//
+	is_expand_simple_interpolation bool // true, when the function/method is marked as @[expand_simple_interpolation]
+	// Calls to it with an interpolation argument like `b.f('x ${y}')`, will be converted to `b.f('x ')` followed by `b.f(y)`.
+	// The same type, has to support also a .write_decimal(n i64) method.
 }
 
 /*
@@ -1144,7 +1156,7 @@ pub mut:
 	is_setter bool
 	is_map    bool
 	is_array  bool
-	is_farray bool
+	is_farray bool // fixed array
 	is_option bool // IfGuard
 	is_direct bool // Set if the underlying memory can be safely accessed
 	is_gated  bool // #[] gated array
@@ -1385,7 +1397,7 @@ pub mut:
 pub struct EnumField {
 pub:
 	name             string // just `lock`, or `abc`, etc, no matter if the name is a keyword or not.
-	source_name      string // The name in the source, for example `@lock`, and `abc`. Note that `lock` is a keyword in V.
+	source_name      string // The name in the source, for example `lock`, and `abc`. Note that `lock` is a keyword in V.
 	pos              token.Pos
 	pre_comments     []Comment // comment before Enumfield
 	comments         []Comment // comment after Enumfield in the same line

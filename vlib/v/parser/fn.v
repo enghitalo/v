@@ -32,7 +32,7 @@ fn (mut p Parser) call_expr(language ast.Language, mod string) ast.CallExpr {
 		p.check_for_impure_v(language, first_pos)
 	}
 	mut or_kind := ast.OrKind.absent
-	if fn_name == 'json.decode' {
+	if fn_name == 'json.decode' || fn_name == 'C.va_arg' {
 		p.expecting_type = true // Makes name_expr() parse the type `User` in `json.decode(User, txt)`
 	}
 
@@ -196,7 +196,9 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 	mut is_noreturn := false
 	mut is_ctor_new := false
 	mut is_c2v_variadic := false
+	mut is_c_extern := false
 	mut is_markused := false
+	mut is_expand_simple_interpolation := false
 	mut comments := []ast.Comment{}
 	for fna in p.attrs {
 		match fna.name {
@@ -236,6 +238,9 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 			'markused' {
 				is_markused = true
 			}
+			'c_extern' {
+				is_c_extern = true
+			}
 			'windows_stdcall' {
 				p.note_with_pos('the tag [windows_stdcall] has been deprecated, it will be an error after 2022-06-01, use `[callconv: stdcall]` instead',
 					p.tok.pos())
@@ -253,6 +258,9 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 					p.error_with_pos('unsupported calling convention, supported are stdcall, fastcall and cdecl',
 						p.prev_tok.pos())
 				}
+			}
+			'expand_simple_interpolation' {
+				is_expand_simple_interpolation = true
 			}
 			else {}
 		}
@@ -312,7 +320,7 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 	mut type_sym := p.table.sym(rec.typ)
 	mut name_pos := p.tok.pos()
 	mut static_type_pos := p.tok.pos()
-	if p.tok.kind == .name {
+	if p.tok.kind == .name || is_ident_name(p.tok.lit) {
 		mut check_name := ''
 		// TODO: high order fn
 		is_static_type_method = p.tok.lit.len > 0 && p.tok.lit[0].is_capital()
@@ -340,14 +348,14 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 		if is_method {
 			mut is_duplicate := type_sym.has_method(name)
 			// make sure this is a normal method and not an interface method
-			if type_sym.kind == .interface_ && is_duplicate {
+			if type_sym.kind == .interface && is_duplicate {
 				if mut type_sym.info is ast.Interface {
 					// if the method is in info then its an interface method
 					is_duplicate = !type_sym.info.has_method(name)
 				}
 			}
 			if is_duplicate {
-				if type_sym.kind == .enum_
+				if type_sym.kind == .enum
 					&& name in ['is_empty', 'has', 'all', 'set', 'set_all', 'clear', 'clear_all', 'toggle', 'zero', 'from'] {
 					if enum_fn := type_sym.find_method(name) {
 						name_pos = enum_fn.name_pos
@@ -550,6 +558,8 @@ run them via `v file.v` instead',
 			pos:      start_pos
 			name_pos: name_pos
 			language: language
+			//
+			is_expand_simple_interpolation: is_expand_simple_interpolation
 		})
 	} else {
 		name = match language {
@@ -603,6 +613,8 @@ run them via `v file.v` instead',
 			pos:      start_pos
 			name_pos: name_pos
 			language: language
+			//
+			is_expand_simple_interpolation: is_expand_simple_interpolation
 		})
 	}
 	/*
@@ -623,9 +635,12 @@ run them via `v file.v` instead',
 		if language != .v && !(language == .js && type_sym.info is ast.Interface) {
 			p.error_with_pos('interop functions cannot have a body', body_start_pos)
 		}
+		last_fn_scope := p.scope
 		p.inside_fn = true
 		p.inside_unsafe_fn = is_unsafe
+		p.cur_fn_scope = p.scope
 		stmts = p.parse_block_no_scope(true)
+		p.cur_fn_scope = last_fn_scope
 		p.inside_unsafe_fn = false
 		p.inside_fn = false
 	}
@@ -654,6 +669,7 @@ run them via `v file.v` instead',
 		is_pub:             is_pub
 		is_variadic:        is_variadic
 		is_c_variadic:      is_c_variadic
+		is_c_extern:        is_c_extern
 		is_main:            is_main
 		is_test:            is_test
 		is_keep_alive:      is_keep_alive
@@ -688,6 +704,8 @@ run them via `v file.v` instead',
 		label_names:           p.label_names
 		end_comments:          p.eat_comments(same_line: true)
 		comments:              comments
+		//
+		is_expand_simple_interpolation: is_expand_simple_interpolation
 	}
 	if generic_names.len > 0 {
 		p.table.register_fn_generic_types(fn_decl.fkey())
@@ -756,7 +774,7 @@ fn (mut p Parser) fn_receiver(mut params []ast.Param, mut rec ReceiverParsingInf
 	// optimize method `automatic use fn (a &big_foo) instead of fn (a big_foo)`
 	type_sym := p.table.sym(rec.typ)
 	mut is_auto_rec := false
-	if type_sym.kind == .struct_ {
+	if type_sym.kind == .struct {
 		info := type_sym.info as ast.Struct
 		if !rec.is_mut && !rec.typ.is_ptr() && info.fields.len > 8 {
 			rec.typ = rec.typ.ref()
@@ -978,7 +996,7 @@ fn (mut p Parser) fn_params() ([]ast.Param, bool, bool, bool) {
 					p.error_with_pos('generic object cannot be `atomic`or `shared`', pos)
 					return []ast.Param{}, false, false, false
 				}
-				if param_type.is_ptr() && p.table.sym(param_type).kind == .struct_ {
+				if param_type.is_ptr() && p.table.sym(param_type).kind == .struct {
 					param_type = param_type.ref()
 				} else {
 					param_type = param_type.set_nr_muls(1)
@@ -1107,7 +1125,7 @@ fn (mut p Parser) fn_params() ([]ast.Param, bool, bool, bool) {
 						pos)
 					return []ast.Param{}, false, false, false
 				}
-				if typ.is_ptr() && p.table.sym(typ).kind == .struct_ {
+				if typ.is_ptr() && p.table.sym(typ).kind == .struct {
 					typ = typ.ref()
 				} else {
 					typ = typ.set_nr_muls(1)
@@ -1255,7 +1273,7 @@ fn (mut p Parser) closure_vars() []ast.Param {
 
 fn (mut p Parser) check_fn_mutable_arguments(typ ast.Type, pos token.Pos) {
 	sym := p.table.sym(typ)
-	if sym.kind in [.array, .array_fixed, .interface_, .map, .placeholder, .struct_, .generic_inst,
+	if sym.kind in [.array, .array_fixed, .interface, .map, .placeholder, .struct, .generic_inst,
 		.sum_type] {
 		return
 	}
@@ -1281,7 +1299,7 @@ fn (mut p Parser) check_fn_shared_arguments(typ ast.Type, pos token.Pos) {
 	if sym.kind == .generic_inst {
 		sym = p.table.type_symbols[(sym.info as ast.GenericInst).parent_idx]
 	}
-	if sym.kind !in [.array, .struct_, .map, .placeholder] && !typ.is_ptr() {
+	if sym.kind !in [.array, .struct, .map, .placeholder] && !typ.is_ptr() {
 		p.error_with_pos('shared arguments are only allowed for arrays, maps, and structs\n',
 			pos)
 	}

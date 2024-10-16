@@ -352,14 +352,16 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 		p.check(.rcbr)
 		end_comments = p.eat_comments(same_line: true)
 	}
+	scoped_name := if !is_anon && p.inside_fn { '_${name}_${p.cur_fn_scope.start_pos}' } else { '' }
 	is_minify := attrs.contains('minify')
 	mut sym := ast.TypeSymbol{
-		kind:     .struct_
+		kind:     .struct
 		language: language
 		name:     name
 		cname:    util.no_dots(name)
 		mod:      p.mod
 		info:     ast.Struct{
+			scoped_name:   scoped_name
 			embeds:        embed_types
 			fields:        fields
 			is_typedef:    attrs.contains('typedef')
@@ -390,6 +392,7 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 	p.expr_mod = ''
 	return ast.StructDecl{
 		name:             name
+		scoped_name:      scoped_name
 		is_pub:           is_pub
 		fields:           ast_fields
 		pos:              start_pos.extend_with_last_line(name_pos, last_line)
@@ -412,9 +415,9 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 
 fn (mut p Parser) struct_init(typ_str string, kind ast.StructInitKind, is_option bool) ast.StructInit {
 	first_pos := (if kind == .short_syntax && p.prev_tok.kind == .lcbr { p.prev_tok } else { p.tok }).pos()
-	p.struct_init_generic_types = []ast.Type{}
+	p.init_generic_types = []ast.Type{}
 	mut typ := if kind == .short_syntax { ast.void_type } else { p.parse_type() }
-	struct_init_generic_types := p.struct_init_generic_types.clone()
+	struct_init_generic_types := p.init_generic_types.clone()
 	if is_option {
 		typ = typ.set_flag(.option)
 	}
@@ -569,7 +572,7 @@ fn (mut p Parser) interface_decl() ast.InterfaceDecl {
 	// Declare the type
 	reg_idx := p.table.register_sym(
 		is_pub:   is_pub
-		kind:     .interface_
+		kind:     .interface
 		name:     interface_name
 		cname:    util.no_dots(interface_name)
 		mod:      p.mod

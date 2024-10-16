@@ -146,7 +146,7 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 		if c.expected_type != 0 {
 			expected_value_type = c.table.value_type(c.expected_type)
 			expected_value_sym := c.table.sym(expected_value_type)
-			if expected_value_sym.kind == .interface_ {
+			if expected_value_sym.kind == .interface {
 				// array of interfaces? (`[dog, cat]`) Save the interface type (`Animal`)
 				expecting_interface_array = true
 			} else if expected_value_sym.kind == .sum_type {
@@ -168,7 +168,7 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 				}
 				if !typ.is_any_kind_of_pointer() && !c.inside_unsafe {
 					typ_sym := c.table.sym(typ)
-					if typ_sym.kind != .interface_ {
+					if typ_sym.kind != .interface {
 						c.mark_as_referenced(mut &expr, true)
 					}
 				}
@@ -207,7 +207,7 @@ fn (mut c Checker) array_init(mut node ast.ArrayInit) ast.Type {
 				}
 			}
 			if expr !is ast.TypeNode {
-				if c.table.type_kind(elem_type) == .interface_ {
+				if c.table.type_kind(elem_type) == .interface {
 					if c.type_implements(typ, elem_type, expr.pos()) {
 						continue
 					}
@@ -432,16 +432,21 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 			node.key_type = info.key_type
 			node.value_type = info.value_type
 			return node.typ
-		} else {
-			if sym.kind == .struct_ {
-				c.error('`{}` can not be used for initialising empty structs any more. Use `${c.table.type_to_str(c.expected_type)}{}` instead.',
-					node.pos)
+		} else if sym.info is ast.Struct {
+			msg := if sym.info.is_anon {
+				'`{}` cannot be used to initialize anonymous structs. Use `struct{}` instead.'
 			} else {
-				c.error('invalid empty map initialisation syntax, use e.g. map[string]int{} instead',
-					node.pos)
+				'`{}` can not be used for initialising empty structs any more. Use `${c.table.type_to_str(c.expected_type)}{}` instead.'
 			}
-			return ast.void_type
+			c.error(msg, node.pos)
+			if sym.info.is_anon {
+				return c.expected_type
+			}
+		} else {
+			c.error('invalid empty map initialisation syntax, use e.g. map[string]int{} instead',
+				node.pos)
 		}
+		return ast.void_type
 	}
 	// `x := map[string]string` - set in parser
 	if node.typ != 0 {
@@ -451,7 +456,7 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 				c.error('cannot use Result type as map value type', node.pos)
 			}
 			val_sym := c.table.sym(info.value_type)
-			if val_sym.kind == .struct_ {
+			if val_sym.kind == .struct {
 				val_info := val_sym.info as ast.Struct
 				if val_info.generic_types.len > 0 && val_info.concrete_types.len == 0
 					&& !info.value_type.has_flag(.generic) {
@@ -517,6 +522,8 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 			if node.keys.len == 1 && map_val_type == ast.none_type {
 				c.error('map value cannot be only `none`', node.vals[0].pos())
 			}
+			c.check_expr_option_or_result_call(key_, map_key_type)
+			c.check_expr_option_or_result_call(val_, map_val_type)
 		}
 		map_key_type = c.unwrap_generic(map_key_type)
 		map_val_type = c.unwrap_generic(map_val_type)
@@ -526,7 +533,7 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 		node.value_type = map_val_type
 
 		map_value_sym := c.table.sym(map_val_type)
-		expecting_interface_map := map_value_sym.kind == .interface_
+		expecting_interface_map := map_value_sym.kind == .interface
 		mut same_key_type := true
 		for i, mut key in node.keys {
 			if i == 0 && map_type == ast.void_type {
@@ -539,6 +546,8 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 			val_type := c.expr(mut val)
 			node.val_types << val_type
 			val_type_sym := c.table.sym(val_type)
+			c.check_expr_option_or_result_call(key, key_type)
+			c.check_expr_option_or_result_call(val, val_type)
 			if !c.check_types(key_type, map_key_type)
 				|| (i == 0 && key_type.is_number() && map_key_type.is_number()
 				&& map_key_type != ast.mktyp(key_type)) {
@@ -550,7 +559,7 @@ fn (mut c Checker) map_init(mut node ast.MapInit) ast.Type {
 				if val_type == map_val_type {
 					continue
 				}
-				if val_type_sym.kind == .struct_
+				if val_type_sym.kind == .struct
 					&& c.type_implements(val_type, map_val_type, val.pos()) {
 					node.vals[i] = ast.CastExpr{
 						expr:      val
@@ -672,7 +681,7 @@ fn (mut c Checker) check_elements_initialized(typ ast.Type) ! {
 		}
 	}
 	sym := c.table.sym(typ)
-	if sym.kind == .interface_ {
+	if sym.kind == .interface {
 		return err_interface_uninitialized
 	} else if sym.kind == .sum_type {
 		return err_sumtype_uninitialized

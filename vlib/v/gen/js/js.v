@@ -1093,7 +1093,7 @@ fn (mut g JsGen) assert_subexpression_to_ctemp(expr ast.Expr, expr_type ast.Type
 		ast.SelectorExpr {
 			if expr.expr is ast.CallExpr {
 				sym := g.table.final_sym(g.unwrap_generic(expr.expr.return_type))
-				if sym.kind == .struct_ {
+				if sym.kind == .struct {
 					if (sym.info as ast.Struct).is_union {
 						return unsupported_ctemp_assert_transform
 					}
@@ -2170,7 +2170,7 @@ fn (mut g JsGen) need_tmp_var_in_match(node ast.MatchExpr) bool {
 		if sym.kind == .multi_return {
 			return false
 		}
-		if cond_sym.kind == .enum_ && node.branches.len > 5 {
+		if cond_sym.kind == .enum && node.branches.len > 5 {
 			return true
 		}
 		for branch in node.branches {
@@ -2263,7 +2263,7 @@ fn (mut g JsGen) match_expr_classic(node ast.MatchExpr, is_expr bool, cond_var M
 						g.expr(expr)
 						g.write('.str')
 					}
-					.struct_ {
+					.struct {
 						ptr_typ := g.gen_struct_equality_fn(node.cond_type)
 
 						g.write('${ptr_typ}_struct_eq(')
@@ -2403,7 +2403,7 @@ fn (mut g JsGen) match_expr(node ast.MatchExpr) {
 	cond_fsym := g.table.final_sym(node.cond_type)
 	if node.is_sum_type {
 		g.match_expr_sumtype(node, is_expr, cond_var, tmp_var)
-	} else if cond_fsym.kind == .enum_ && !g.inside_loop && node.branches.len > 5
+	} else if cond_fsym.kind == .enum && !g.inside_loop && node.branches.len > 5
 		&& unsafe { g.fn_decl != 0 } { // do not optimize while in top-level
 		g.match_expr_switch(node, is_expr, cond_var, tmp_var, cond_fsym)
 	} else {
@@ -2489,7 +2489,7 @@ fn (mut g JsGen) match_expr_sumtype(node ast.MatchExpr, is_expr bool, cond_var M
 				} else {
 					g.write('if (')
 				}
-				if sym.kind == .sum_type || sym.kind == .interface_ {
+				if sym.kind == .sum_type || sym.kind == .interface {
 					x := branch.exprs[sumtype_index]
 
 					if x is ast.TypeNode {
@@ -2519,7 +2519,7 @@ fn (mut g JsGen) match_expr_sumtype(node ast.MatchExpr, is_expr bool, cond_var M
 						g.write(' instanceof ')
 						g.expr(branch.exprs[sumtype_index])
 					}
-				} else if sym.kind == .interface_ {
+				} else if sym.kind == .interface {
 					if !sym.name.starts_with('JS.') {
 						g.write('.val')
 					}
@@ -3273,7 +3273,7 @@ fn (mut g JsGen) gen_selector_expr(it ast.SelectorExpr) {
 	g.expr(it.expr)
 	mut ltyp := it.expr_type
 	lsym := g.table.sym(ltyp)
-	if lsym.kind != .interface_ && lsym.language != .js {
+	if lsym.kind != .interface && lsym.language != .js {
 		for ltyp.is_ptr() {
 			g.write('.val')
 			ltyp = ltyp.deref()
@@ -3304,7 +3304,7 @@ fn (mut g JsGen) gen_string_inter_literal(it ast.StringInterLiteral) {
 		typ := g.unwrap_generic(it.expr_types[i])
 		/*
 		g.expr(expr)
-			if sym.kind == .struct_ && sym.has_method('str') {
+			if sym.kind == .struct && sym.has_method('str') {
 				g.write('.str()')
 			}*/
 		g.gen_expr_to_string(expr, typ)
@@ -3345,15 +3345,15 @@ fn (mut g JsGen) gen_struct_init(it ast.StructInit) {
 	if name.contains('<') {
 		name = name[0..name.index('<') or { name.len }]
 	}
-	if it.init_fields.len == 0 && type_sym.kind != .interface_ {
-		if type_sym.kind == .struct_ && type_sym.language == .js {
+	if it.init_fields.len == 0 && type_sym.kind != .interface {
+		if type_sym.kind == .struct && type_sym.language == .js {
 			g.write('{}')
 		} else {
 			g.write('new ${g.js_name(name)}({})')
 		}
-	} else if it.init_fields.len == 0 && type_sym.kind == .interface_ {
+	} else if it.init_fields.len == 0 && type_sym.kind == .interface {
 		g.write('new ${g.js_name(name)}()') // JS interfaces can be instantiated with default ctor
-	} else if type_sym.kind == .interface_ && it.init_fields.len != 0 {
+	} else if type_sym.kind == .interface && it.init_fields.len != 0 {
 		g.writeln('(function () {')
 		g.inc_indent()
 		g.writeln('let tmp = new ${g.js_name(name)}()')
@@ -3366,7 +3366,7 @@ fn (mut g JsGen) gen_struct_init(it ast.StructInit) {
 		g.writeln('return tmp')
 		g.dec_indent()
 		g.writeln('})()')
-	} else if type_sym.kind == .struct_ && type_sym.language == .js {
+	} else if type_sym.kind == .struct && type_sym.language == .js {
 		g.writeln('{')
 		g.inc_indent()
 		for i, init_field in it.init_fields {
@@ -3631,15 +3631,15 @@ fn (mut g JsGen) gen_float_literal_expr(it ast.FloatLiteral) {
 fn (mut g JsGen) unwrap_generic(typ ast.Type) ast.Type {
 	if typ.has_flag(.generic) {
 		/*
-		resolve_generic_to_concrete should not mutate the table.
+		convert_generic_type should not mutate the table.
 		It mutates if the generic type is for example []T and the
 		concrete type is an array type that has not been registered
 		yet. This should have already happened in the checker, since
-		it also calls resolve_generic_to_concrete. g.table is made
+		it also calls convert_generic_type. g.table is made
 		non-mut to make sure no one else can accidentally mutates the table.
 		*/
 		mut muttable := unsafe { &ast.Table(g.table) }
-		if t_typ := muttable.resolve_generic_to_concrete(typ, if unsafe { g.fn_decl != 0 } {
+		if t_typ := muttable.convert_generic_type(typ, if unsafe { g.fn_decl != 0 } {
 			g.fn_decl.generic_names
 		} else {
 			[]string{}

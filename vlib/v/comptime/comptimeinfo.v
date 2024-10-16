@@ -195,9 +195,9 @@ pub fn (mut ct ComptimeInfo) get_comptime_selector_bool_field(field_name string)
 		'is_array' { return field_sym.kind in [.array, .array_fixed] }
 		'is_map' { return field_sym.kind == .map }
 		'is_chan' { return field_sym.kind == .chan }
-		'is_struct' { return field_sym.kind == .struct_ }
+		'is_struct' { return field_sym.kind == .struct }
 		'is_alias' { return field_sym.kind == .alias }
-		'is_enum' { return field_sym.kind == .enum_ }
+		'is_enum' { return field_sym.kind == .enum }
 		else { return false }
 	}
 }
@@ -208,7 +208,7 @@ pub fn (mut ct ComptimeInfo) is_comptime_type(x ast.Type, y ast.ComptimeType) bo
 		.unknown {
 			return false
 		}
-		.map_ {
+		.map {
 			return x_kind == .map
 		}
 		.string {
@@ -221,11 +221,11 @@ pub fn (mut ct ComptimeInfo) is_comptime_type(x ast.Type, y ast.ComptimeType) bo
 		.float {
 			return x_kind in [.f32, .f64, .float_literal]
 		}
-		.struct_ {
-			return x_kind == .struct_
+		.struct {
+			return x_kind == .struct
 		}
 		.iface {
-			return x_kind == .interface_
+			return x_kind == .interface
 		}
 		.array {
 			return x_kind in [.array, .array_fixed]
@@ -239,8 +239,8 @@ pub fn (mut ct ComptimeInfo) is_comptime_type(x ast.Type, y ast.ComptimeType) bo
 		.sum_type {
 			return x_kind == .sum_type
 		}
-		.enum_ {
-			return x_kind == .enum_
+		.enum {
+			return x_kind == .enum
 		}
 		.alias {
 			return x_kind == .alias
@@ -285,10 +285,13 @@ fn (mut ct ComptimeInfo) comptime_get_kind_var(var ast.Ident) ?ast.ComptimeForKi
 	}
 }
 
-pub fn (mut ct ComptimeInfo) resolve_generic_expr(expr ast.Expr, default_typ ast.Type) ast.Type {
+pub fn (mut ct ComptimeInfo) unwrap_generic_expr(expr ast.Expr, default_typ ast.Type) ast.Type {
 	match expr {
+		ast.StringLiteral, ast.StringInterLiteral {
+			return ast.string_type
+		}
 		ast.ParExpr {
-			return ct.resolve_generic_expr(expr.expr, default_typ)
+			return ct.unwrap_generic_expr(expr.expr, default_typ)
 		}
 		ast.CastExpr {
 			return expr.typ
@@ -330,6 +333,8 @@ pub mut:
 	resolver IResolverType = DummyResolver{}
 	// symbol table resolver
 	table &ast.Table = unsafe { nil }
+	// loop id for loop distinction
+	comptime_loop_id int
 	// $for
 	inside_comptime_for bool
 	type_map            map[string]ast.Type
