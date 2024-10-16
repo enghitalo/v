@@ -126,17 +126,13 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 		value_kind: value_kind
 	}
 
-	// unsafe{*length += int(3)}
-	// mut value_info := &checker.values_info[checker.values_info.len - 1]
 	value_info_index := checker.values_info.len - 1
 	match value_kind {
 		.unknown {
 			return checker.error('unknown value kind')
 		}
 		.null {
-			// assert false
 			// check if the JSON string is a null value
-			// (decoder.json.str + node.key_pos, field.name.str, field.name.len) == 0
 			if checker_end - checker.checker_idx <= 3 {
 				return checker.error('EOF error')
 			}
@@ -253,7 +249,6 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 								if val[checker.checker_idx] == `}` {
 									break
 								} else {
-									// return checker.error('`}` after value')
 									return
 								}
 							}
@@ -326,10 +321,6 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 					}
 				}
 			}
-			// skip `]`
-			// if checker.checker_idx < checker_end - 1 {
-			// 	checker.checker_idx++
-			// }
 		}
 		.string_ {
 			// check if the JSON string is a valid string
@@ -338,13 +329,7 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 				return checker.error('EOF error: string not closed')
 			}
 
-			// start_string_position := checker.checker_idx
-
 			checker.checker_idx++
-
-			// if val[checker.checker_idx] == `"` {
-			// 	return
-			// }
 
 			// check if the JSON string is a valid escape sequence
 			for val[checker.checker_idx] != `"` && val[checker.checker_idx - 1] != `\\` {
@@ -387,15 +372,6 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 				}
 				checker.checker_idx++
 			}
-			// checker.values_info << ValueInfo{
-			// 	position: start_string_position
-			// 	length: checker.checker_idx - start_string_position +1
-			// 	value_kind: .string_
-			// }
-			// `"` is the last character
-			// if checker.checker_idx < checker_end - 1 {
-			// 	checker.checker_idx++
-			// }
 		}
 		.number {
 			// check if the JSON string is a valid float or integer
@@ -436,11 +412,6 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 				digits_count++
 				checker.checker_idx++
 			}
-			// checker.values_info << ValueInfo{
-			// 	position: checker.checker_idx - (digits_count-1)
-			// 	length: digits_count
-			// 	value_kind: .number
-			// }
 		}
 		.boolean {
 			// check if the JSON string is a valid boolean
@@ -459,18 +430,6 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 							checker.checker_idx + 4]}` instead of `true`')
 					}
 					checker.checker_idx += 3
-					// dump(checker.json[start_idx_position..checker.checker_idx+1])
-					// for letter in 'rue' {
-					// 	checker.checker_idx++
-					// 	if val[checker.checker_idx] != letter {
-					// 		return checker.error('invalid boolean')
-					// 	}
-					// }
-					// checker.values_info << ValueInfo{
-					// 	position: checker.checker_idx - 3
-					// 	length: 4
-					// 	value_kind: .boolean
-					// }
 				}
 				`f` {
 					if checker_end - checker.checker_idx <= 4 {
@@ -487,26 +446,11 @@ fn (mut checker Decoder) check_json_format(val string) ! {
 					}
 
 					checker.checker_idx += 4
-
-					// for letter in 'alse' {
-					// 	checker.checker_idx++
-					// 	if val[checker.checker_idx] != letter {
-					// 		return checker.error('invalid boolean')
-					// 	}
-					// }
-					// checker.values_info << ValueInfo{
-					// 	position: checker.checker_idx - 4
-					// 	length: 5
-					// 	value_kind: .boolean
-					// }
 				}
 				else {
 					return checker.error('invalid boolean')
 				}
 			}
-			// if checker.checker_idx < checker_end - 1 {
-			// 	checker.checker_idx++
-			// }
 		}
 	}
 
