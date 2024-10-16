@@ -107,7 +107,6 @@ fn main() {
 
 	b.measure('old_json.decode(map[string]string, json_data1)!\n')
 
-
 	println('\n***simple types***')
 
 	// string **********************************************************
@@ -122,19 +121,19 @@ fn main() {
 		_ := decoder2.decode[int]('2')!
 	}
 
-	b.measure('decoder2.decode[int](\'2\')!') 
+	b.measure("decoder2.decode[int]('2')!")
 
 	// bool **********************************************************
 	for i := 0; i < max_iterations; i++ {
 		_ := decoder2.decode[bool]('true')!
 	}
 
-	b.measure('decoder2.decode[bool](\'true\')!')
+	b.measure("decoder2.decode[bool]('true')!")
 
 	// time.Time **********************************************************
 	for i := 0; i < max_iterations; i++ {
 		_ := decoder2.decode[time.Time]('"2022-03-11T13:54:25"')!
 	}
 
-	b.measure('decoder2.decode[time.Time](\'2022-03-11T13:54:25\')!')
+	b.measure("decoder2.decode[time.Time]('2022-03-11T13:54:25')!")
 }

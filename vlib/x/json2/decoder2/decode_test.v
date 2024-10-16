@@ -101,62 +101,57 @@ fn test_check_if_json_match() {
 fn test_check_json_format() {
 	// primitives
 	for variable in ['""', '"string"', '123', '0', 'true'] {
-		mut checker := Checker{
-			idx:  0
-			end:  variable.len
-			json: variable
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        variable
 		}
 
 		checker.check_json_format(variable) or { assert false, err.str() }
-		assert checker.idx == checker.end - 1, 'Expected to reach the end of the json string ${checker.json}'
+		assert checker.checker_idx == checker.json.len - 1, 'Expected to reach the end of the json string ${checker.json}'
 	}
 
 	// simple objects
 	for variable in ['{}', '{"key": null}', '{"key": "value"}', '{"key": 123}', '{"key": true}'] {
-		mut checker := Checker{
-			idx:  0
-			end:  variable.len
-			json: variable
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        variable
 		}
 
 		checker.check_json_format(variable) or { assert false, err.str() }
-		assert checker.idx == checker.end - 1, 'Expected to reach the end of the json string ${checker.json}'
+		assert checker.checker_idx == checker.json.len - 1, 'Expected to reach the end of the json string ${checker.json}'
 	}
 
 	// Nested objects
 	for variable in ['{"key": {"key": 123}}'] {
-		mut checker := Checker{
-			idx:  0
-			end:  variable.len
-			json: variable
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        variable
 		}
 
 		checker.check_json_format(variable) or { assert false, err.str() }
-		assert checker.idx == checker.end - 1, 'Expected to reach the end of the json string ${checker.json}'
+		assert checker.checker_idx == checker.json.len - 1, 'Expected to reach the end of the json string ${checker.json}'
 	}
 
 	// simple arrays
 	for variable in ['[]', '[1, 2, 3]', '["a", "b", "c"]', '[true, false]'] {
-		mut checker := Checker{
-			idx:  0
-			end:  variable.len
-			json: variable
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        variable
 		}
 
 		checker.check_json_format(variable) or { assert false, err.str() }
-		assert checker.idx == checker.end - 1, 'Expected to reach the end of the json string ${checker.json}'
+		assert checker.checker_idx == checker.json.len - 1, 'Expected to reach the end of the json string ${checker.json}'
 	}
 
 	// Nested arrays
 	for variable in ['[[1, 2, 3], [4, 5, 6]]'] {
-		mut checker := Checker{
-			idx:  0
-			end:  variable.len
-			json: variable
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        variable
 		}
 
 		checker.check_json_format(variable) or { assert false, err.str() }
-		// assert checker.idx == checker.end - 1, 'Expected to reach the end of the json string ${checker.json}'
+		// assert checker.checker_idx == checker.json.len - 1, 'Expected to reach the end of the json string ${checker.json}'
 	}
 
 	// Wrong jsons
@@ -206,10 +201,9 @@ fn test_check_json_format() {
 
 	for json_and_error in json_and_error_message {
 		mut has_error := false
-		mut checker := Checker{
-			idx:  0
-			end:  json_and_error['json'].len
-			json: json_and_error['json']
+		mut checker := Decoder{
+			checker_idx: 0
+			json:        json_and_error['json']
 		}
 
 		checker.check_json_format(json_and_error['json']) or {
@@ -234,10 +228,9 @@ fn test_get_value_kind() {
 
 fn test_checker_values_info() {
 	// Test for string value
-	mut checker := Checker{
-		idx:  0
-		end:  8
-		json: '"value"'
+	mut checker := Decoder{
+		checker_idx: 0
+		json:        '"value"'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 1
@@ -246,10 +239,9 @@ fn test_checker_values_info() {
 	assert checker.values_info[0].value_kind == .string_
 
 	// Test for number value
-	checker = Checker{
-		idx:  0
-		end:  3
-		json: '123'
+	checker = Decoder{
+		checker_idx: 0
+		json:        '123'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 1
@@ -258,10 +250,9 @@ fn test_checker_values_info() {
 	assert checker.values_info[0].value_kind == .number
 
 	// Test for boolean value
-	checker = Checker{
-		idx:  0
-		end:  4
-		json: 'true'
+	checker = Decoder{
+		checker_idx: 0
+		json:        'true'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 1
@@ -270,10 +261,9 @@ fn test_checker_values_info() {
 	assert checker.values_info[0].value_kind == .boolean
 
 	// Test for null value
-	checker = Checker{
-		idx:  0
-		end:  4
-		json: 'null'
+	checker = Decoder{
+		checker_idx: 0
+		json:        'null'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 1
@@ -282,10 +272,9 @@ fn test_checker_values_info() {
 	assert checker.values_info[0].value_kind == .null
 
 	// Test for object value
-	checker = Checker{
-		idx:  0
-		end:  16
-		json: '{"key": "value"}'
+	checker = Decoder{
+		checker_idx: 0
+		json:        '{"key": "value"}'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 3
@@ -300,11 +289,10 @@ fn test_checker_values_info() {
 	assert checker.values_info[2].value_kind == .string_
 
 	// Test for nested object value
-	checker = Checker{
-		idx: 0
-		end: 27
+	checker = Decoder{
+		checker_idx: 0
 		// json: '0<-{1"key1": 9<-{10"key2": 18"value1"}}'
-		json: '{"key1": {"key2": "value1"}}'
+		json: '{"key1": {"key2": "value1"}'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	dump(checker.values_info)
@@ -325,10 +313,9 @@ fn test_checker_values_info() {
 	assert checker.values_info[4].length == 8
 
 	// Test for array value
-	checker = Checker{
-		idx:  0
-		end:  12
-		json: '[1, 22, 333]'
+	checker = Decoder{
+		checker_idx: 0
+		json:        '[1, 22, 333]'
 	}
 	checker.check_json_format(checker.json) or { assert false, err.str() }
 	assert checker.values_info.len == 4
@@ -348,10 +335,9 @@ fn test_checker_values_info() {
 
 fn test_string_non_ascii() {
 	json_string := '"a\\u3072b\\u3089c\\u304cd\\u306a"'
-	mut checker := Checker{
-		idx:  0
-		end:  json_string.len
-		json: json_string
+	mut checker := Decoder{
+		checker_idx: 0
+		json:        json_string
 	}
 
 	checker.check_json_format(checker.json)!
