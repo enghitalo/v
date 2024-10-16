@@ -3,25 +3,36 @@ module decoder2
 import time
 import strconv
 
-// Node represents a node in a JSON decoder tree.
+// Node represents a node in a JSON decoder tree. Used to decode object in JSON.
 struct Node {
 	key_pos  int     // The position of the key in the JSON string.
 	key_len  int     // The length of the key in the JSON string.
 	children ?[]Node // The children nodes of the current node.
 }
 
+// ValueInfo represents the position and length of a value, like string, number, array, object key and object value in a JSON string.
+struct ValueInfo {
+	position   int       // The position of the value in the JSON string.
+	value_kind ValueKind // The kind of the value.
+mut:
+	length int // The length of the value in the JSON string.
+}
+
 // Decoder represents a JSON decoder.
 struct Decoder {
-	json string // json is the JSON data to be decoded.
+	json        string // json is the JSON data to be decoded.
+	values_info []ValueInfo
 mut:
-	idx int // idx is the current index of the decoder.
+	idx            int // idx is the current index of the decoder.
+	value_info_idx int // value_info_idx is the current index of the values_info.
 }
 
 struct Checker {
 	end  int
 	json string // json is the JSON data to be decoded.
 mut:
-	idx int // idx is the current index of the decoder.
+	idx         int // idx is the current index of the decoder.
+	values_info []ValueInfo
 }
 
 pub enum ValueKind {
@@ -121,6 +132,16 @@ fn (mut checker Checker) check_json_format(val string) ! {
 
 	// check if generic type matches the JSON type
 	value_kind := get_value_kind(val[checker.idx])
+	start_idx_position := checker.idx
+	checker.values_info << ValueInfo{
+		position:   start_idx_position
+		length:     0
+		value_kind: value_kind
+	}
+
+	// unsafe{*length += int(3)}
+	// mut value_info := &checker.values_info[checker.values_info.len - 1]
+	value_info_index := checker.values_info.len - 1
 	match value_kind {
 		.unknown {
 			return checker.error('unknown value kind')
@@ -128,19 +149,27 @@ fn (mut checker Checker) check_json_format(val string) ! {
 		.null {
 			// assert false
 			// check if the JSON string is a null value
-			for letter in 'null' {
-				if val[checker.idx] != letter {
-					return checker.error('invalid null value')
-				}
-				checker.idx++
+			// (decoder.json.str + node.key_pos, field.name.str, field.name.len) == 0
+			if checker.end - checker.idx <= 3 {
+				return checker.error('EOF error')
 			}
+
+			is_not_ok := unsafe {
+				vmemcmp(checker.json.str + checker.idx, 'null'.str, 4)
+			}
+
+			if is_not_ok != 0 {
+				return checker.error('invalid null value. Got `${checker.json[checker.idx..
+					checker.idx + 4]}` instead of `null`')
+			}
+			checker.idx += 3
 		}
 		.object {
 			checker.idx++
 			for val[checker.idx] != `}` {
 				// check if the JSON string is an empty object
 				if checker.end - checker.idx <= 2 {
-					return
+					continue
 				}
 
 				if val[checker.idx] != `"` {
@@ -156,7 +185,7 @@ fn (mut checker Checker) check_json_format(val string) ! {
 				}
 
 				if val[checker.idx] == `}` {
-					return
+					continue
 				}
 
 				match val[checker.idx] {
@@ -260,7 +289,7 @@ fn (mut checker Checker) check_json_format(val string) ! {
 					return
 				}
 			} else {
-				return checker.error('EOF error: There are not enough leght for an array')
+				return checker.error('EOF error: There are not enough length for an array')
 			}
 
 			for val[checker.idx] != `]` {
@@ -311,9 +340,9 @@ fn (mut checker Checker) check_json_format(val string) ! {
 				}
 			}
 			// skip `]`
-			if checker.idx < checker.end - 1 {
-				checker.idx++
-			}
+			// if checker.idx < checker.end - 1 {
+			// 	checker.idx++
+			// }
 		}
 		.string_ {
 			// check if the JSON string is a valid string
@@ -322,11 +351,13 @@ fn (mut checker Checker) check_json_format(val string) ! {
 				return checker.error('EOF error: string not closed')
 			}
 
+			// start_string_position := checker.idx
+
 			checker.idx++
 
-			if val[checker.idx] == `"` {
-				return
-			}
+			// if val[checker.idx] == `"` {
+			// 	return
+			// }
 
 			// check if the JSON string is a valid escape sequence
 			for val[checker.idx] != `"` && val[checker.idx - 1] != `\\` {
@@ -341,7 +372,10 @@ fn (mut checker Checker) check_json_format(val string) ! {
 							// check if the JSON string is a valid unicode escape sequence
 							escaped_char_last_index := checker.idx + 5
 
-							if escaped_char_last_index >= checker.end - 1 {
+							if escaped_char_last_index < checker.end - 1 {
+								// 2 bytes for the unicode escape sequence `\u`
+								checker.idx += 2
+
 								for checker.idx < escaped_char_last_index {
 									match val[checker.idx] {
 										`0`...`9`, `a`...`f`, `A`...`F` {
@@ -355,7 +389,8 @@ fn (mut checker Checker) check_json_format(val string) ! {
 								// REVIEW: Should we increment the index here?
 								continue
 							} else {
-								return checker.error('short unicode escape sequence')
+								return checker.error('short unicode escape sequence ${checker.json[checker.idx..
+									escaped_char_last_index + 1]}')
 							}
 						}
 						else {
@@ -365,25 +400,30 @@ fn (mut checker Checker) check_json_format(val string) ! {
 				}
 				checker.idx++
 			}
+			// checker.values_info << ValueInfo{
+			// 	position: start_string_position
+			// 	length: checker.idx - start_string_position +1
+			// 	value_kind: .string_
+			// }
 			// `"` is the last character
-			if checker.idx < checker.end - 1 {
-				checker.idx++
-			}
+			// if checker.idx < checker.end - 1 {
+			// 	checker.idx++
+			// }
 		}
 		.number {
 			// check if the JSON string is a valid float or integer
 			mut is_negative := val[0] == `-`
 			mut has_dot := false
 
-			mut digits_count := 0
+			mut digits_count := 1
 
-			for val[checker.idx] !in [`,`, `}`, `]`] && checker.idx < checker.end - 1 {
-				digits_count++
+			if is_negative {
+				checker.idx++
+			}
 
-				// skip whitespace
-				for val[checker.idx] in [` `, `\t`, `\n`] {
-					checker.idx++
-				}
+			for checker.idx < checker.end - 1
+				&& val[checker.idx + 1] !in [`,`, `}`, `]`, ` `, `\t`, `\n`]
+				&& checker.idx < checker.end - 1 {
 				if val[checker.idx] == `.` {
 					if has_dot {
 						return checker.error('invalid float. Multiple dots')
@@ -404,91 +444,188 @@ fn (mut checker Checker) check_json_format(val string) ! {
 				}
 
 				if digits_count >= 64 {
-					return checker.error('number exeeds 64 digits')
+					return checker.error('number exceeds 64 digits')
 				}
-
+				digits_count++
 				checker.idx++
 			}
+			// checker.values_info << ValueInfo{
+			// 	position: checker.idx - (digits_count-1)
+			// 	length: digits_count
+			// 	value_kind: .number
+			// }
 		}
 		.boolean {
 			// check if the JSON string is a valid boolean
 			match val[checker.idx] {
 				`t` {
-					for letter in 'rue' {
-						checker.idx++
-						if val[checker.idx] != letter {
-							return checker.error('invalid boolean')
-						}
+					if checker.end - checker.idx <= 3 {
+						return checker.error('EOF error')
 					}
+
+					is_not_ok := unsafe {
+						vmemcmp(checker.json.str + checker.idx, 'true'.str, 4)
+					}
+
+					if is_not_ok != 0 {
+						return checker.error('invalid boolean value. Got `${checker.json[checker.idx..
+							checker.idx + 4]}` instead of `true`')
+					}
+					checker.idx += 3
+					// dump(checker.json[start_idx_position..checker.idx+1])
+					// for letter in 'rue' {
+					// 	checker.idx++
+					// 	if val[checker.idx] != letter {
+					// 		return checker.error('invalid boolean')
+					// 	}
+					// }
+					// checker.values_info << ValueInfo{
+					// 	position: checker.idx - 3
+					// 	length: 4
+					// 	value_kind: .boolean
+					// }
 				}
 				`f` {
-					for letter in 'alse' {
-						checker.idx++
-						if val[checker.idx] != letter {
-							return checker.error('invalid boolean')
-						}
+					if checker.end - checker.idx <= 4 {
+						return checker.error('EOF error')
 					}
+
+					is_not_ok := unsafe {
+						vmemcmp(checker.json.str + checker.idx, 'false'.str, 5)
+					}
+
+					if is_not_ok != 0 {
+						return checker.error('invalid boolean value. Got `${checker.json[checker.idx..
+							checker.idx + 5]}` instead of `false`')
+					}
+
+					checker.idx += 4
+
+					// for letter in 'alse' {
+					// 	checker.idx++
+					// 	if val[checker.idx] != letter {
+					// 		return checker.error('invalid boolean')
+					// 	}
+					// }
+					// checker.values_info << ValueInfo{
+					// 	position: checker.idx - 4
+					// 	length: 5
+					// 	value_kind: .boolean
+					// }
 				}
 				else {
 					return checker.error('invalid boolean')
 				}
 			}
-			if checker.idx < checker.end - 1 {
-				checker.idx++
-			}
+			// if checker.idx < checker.end - 1 {
+			// 	checker.idx++
+			// }
 		}
+	}
+
+	checker.values_info[value_info_index].length = checker.idx + 1 - start_idx_position
+
+	if checker.idx < checker.end - 1 {
+		checker.idx++
 	}
 
 	for checker.idx < checker.end - 1 && val[checker.idx] !in [`,`, `:`, `}`, `]`] {
 		// get trash characters after the value
 		if val[checker.idx] !in [` `, `\t`, `\n`] {
-			last_new_line := val.last_index_u8(`\n`)
-			mut error_message := '\n'
-			if last_new_line != -1 {
-				error_message += val[last_new_line + 1..checker.idx]
-			} else {
-				error_message += val[0..checker.idx]
-			}
-			error_message += [val[checker.idx]].bytestr()
-			error_message += '\n'
-
-			if last_new_line != -1 {
-				error_message += ' '.repeat(checker.idx - last_new_line)
-			} else {
-				error_message += ' '.repeat(checker.idx)
-			}
-			error_message += '^ invalid value. Unexpected character after ${value_kind} end'
-			return error(error_message)
+			checker.error('invalid value. Unexpected character after ${value_kind} end')!
 		} else {
 			// whitespace
-			checker.idx++
 		}
+		checker.idx++
 	}
 }
 
 // decode decodes a JSON string into a specified type.
 pub fn decode[T](val string) !T {
 	mut checker := Checker{
-		idx:  0
-		end:  val.len
-		json: val
+		idx:         0
+		end:         val.len
+		json:        val
+		values_info: []ValueInfo{}
 	}
+
 	checker.check_json_format(val)!
 	check_if_json_match[T](val)!
 
 	mut decoder := Decoder{
-		json: val
+		json:        val
+		values_info: checker.values_info
 	}
 
 	mut result := T{}
-	decoder.decode_value(&result)
+	decoder.decode_value(mut &result)!
 	return result
 }
 
 // decode_value decodes a value from the JSON nodes.
-fn (mut decoder Decoder) decode_value[T](val &T) {
-	$if val is $option {
+fn (mut decoder Decoder) decode_value[T](mut val T) ! {
+	$if T is $option {
+		mut unwrapped_val := create_from_optional(val.$(field.name))
+		decoder.decode_value(mut &unwrapped_val)!
+		val.$(field.name) = unwrapped_val
 	} $else $if T is string {
+		value_info := decoder.values_info[decoder.value_info_idx]
+
+		if value_info.value_kind == .string_ {
+			buffer_lenght, escape_positions := decoder.calculate_string_space_and_escapes()!
+
+			string_buffer := []u8{cap: buffer_lenght}
+
+			if escape_positions.len == 0 {
+				if value_info.length != 0 {
+					unsafe {
+						string_buffer.push_many(decoder.json.str + value_info.position + 1,
+							buffer_lenght)
+					}
+				}
+			} else {
+				for i := 0; i < escape_positions.len; i++ {
+					escape_position := escape_positions[i]
+					if i == 0 {
+						// string_buffer << decoder.json[value_info.position + 1..escape_position].bytes()
+
+						// Pushes a substring from the JSON string into the string buffer.
+						// The substring starts at the position of the value in the JSON string plus one,
+						// and ends at the escape position minus one.
+						// This is used to handle escaped characters within the JSON string.
+						unsafe {
+							string_buffer.push_many(decoder.json.str + value_info.position + 1,
+								escape_position - value_info.position - 1)
+						}
+					} else {
+						// string_buffer << decoder.json[escape_positions[i - 1] + 2..escape_position].bytes()
+
+						// Pushes a substring from the JSON string into the string buffer, starting after the previous escape position
+						// and ending just before the current escape position. This handles the characters between escape sequences.
+						// dump(escape_position - escape_positions[i - 1] - 6 )
+						unsafe {
+							string_buffer.push_many(decoder.json.str + escape_positions[i - 1] + 6,
+								escape_position - escape_positions[i - 1] - 6)
+						}
+					}
+
+					unescaped_buffer := generate_unicode_escape_sequence(unsafe {
+						(decoder.json.str + escape_positions[i] + 2).vbytes(4)
+					})!
+
+					unsafe { string_buffer.push_many(&unescaped_buffer[0], unescaped_buffer.len) }
+				}
+				end_of_last_escape_position := escape_positions[escape_positions.len - 1] + 6
+				unsafe {
+					string_buffer.push_many(decoder.json.str + end_of_last_escape_position,
+						value_info.length - end_of_last_escape_position - 1)
+				}
+			}
+
+			unsafe {
+				*val = string_buffer.bytestr()
+			}
+		}
 	} $else $if T is $sumtype {
 		$for v in val.variants {
 			if val is v {
@@ -497,21 +634,159 @@ fn (mut decoder Decoder) decode_value[T](val &T) {
 		}
 	} $else $if T is $alias {
 	} $else $if T is time.Time {
-	} $else $if T is $map {
-	} $else $if T is $array {
-	} $else $if T is $struct {
-		mut nodes := []Node{}
-		// TODO: needs performance improvements
-		decoder.fulfill_nodes(mut nodes)
+		value_info := decoder.values_info[decoder.value_info_idx]
 
-		decoder.decode_struct(nodes, val)
-	} $else $if T is $enum {
-	} $else $if T is $int {
-	} $else $if T is $float {
+		if value_info.value_kind == .string_ {
+			string_time := decoder.json.substr_unsafe(value_info.position + 1,
+				value_info.position + value_info.length - 1)
+
+			unsafe {
+				*val = time.parse_rfc3339(string_time) or { time.Time{} }
+			}
+		}
+	} $else $if T is $map {
+		object_info := decoder.values_info[decoder.value_info_idx]
+
+		if object_info.value_kind == .object {
+			object_position := object_info.position
+			object_end := object_position + object_info.length
+
+			// go to the first key
+			decoder.value_info_idx++
+			for {
+				if decoder.value_info_idx >= decoder.values_info.len {
+					break
+				}
+
+				key_info := decoder.values_info[decoder.value_info_idx]
+
+				if key_info.value_kind == .string_ {
+					key_position := key_info.position
+					key_end := key_position + key_info.length
+
+					// go to the value
+					decoder.value_info_idx++
+
+					if decoder.value_info_idx >= decoder.values_info.len {
+						break
+					}
+					value_info := decoder.values_info[decoder.value_info_idx]
+
+					// REVIEW: This is a hack to avoid copying the key string. Is it a good idea?
+					// mut key := decoder.json.substr_unsafe(key_position + 1, key_end - 1)
+					key := decoder.json.substr(key_position + 1, key_end - 1)
+
+					mut map_value := create_map_value(val)
+
+					decoder.decode_value(mut &map_value)!
+
+					val[key] = map_value
+
+					if value_info.position + value_info.length >= object_end {
+						break
+					}
+				}
+			}
+		}
+	} $else $if T is $array {
+		array_info := decoder.values_info[decoder.value_info_idx]
+
+		if array_info.value_kind == .array {
+			array_position := array_info.position
+			array_end := array_position + array_info.length
+
+			decoder.value_info_idx++
+			for {
+				if decoder.value_info_idx >= decoder.values_info.len {
+					break
+				}
+				value_info := decoder.values_info[decoder.value_info_idx]
+
+				if value_info.position + value_info.length >= array_end {
+					break
+				}
+
+				mut array_element := create_array_element(val)
+
+				decoder.decode_value(mut &array_element)!
+
+				val << array_element
+			}
+		}
+	} $else $if T is $struct {
+		object_info := decoder.values_info[decoder.value_info_idx]
+
+		if object_info.value_kind == .object {
+			object_position := object_info.position
+			object_end := object_position + object_info.length
+
+			// go to the first key
+			decoder.value_info_idx++
+
+			for {
+				if decoder.value_info_idx >= decoder.values_info.len {
+					break
+				}
+
+				key_info := decoder.values_info[decoder.value_info_idx]
+
+				if key_info.value_kind == .string_ {
+					key_position := key_info.position
+					key_end := key_position + key_info.length
+
+					key := decoder.json.substr_unsafe(key_position + 1, key_end - 1)
+
+					$for field in T.fields {
+						if key.len == field.name.len {
+							if unsafe {
+								vmemcmp(decoder.json.str + key_position + 1, field.name.str,
+									field.name.len) == 0
+							} {
+								// go to the value
+								decoder.value_info_idx++
+
+								$if field.typ is $option {
+									mut unwrapped_val := create_from_optional(val.$(field.name))
+									decoder.decode_value(mut &unwrapped_val)!
+									val.$(field.name) = unwrapped_val
+								} $else {
+									decoder.decode_value(mut val.$(field.name))!
+								}
+								if decoder.value_info_idx >= decoder.values_info.len {
+									break
+								}
+							}
+						}
+					}
+					value_info := decoder.values_info[decoder.value_info_idx]
+
+					if value_info.position + value_info.length >= object_end {
+						break
+					}
+				}
+			}
+		}
 	} $else $if T is bool {
+		// REVIEW -  Why `bool` can be considered as T in [$int, $float, $enum]
+		value_info := decoder.values_info[decoder.value_info_idx]
+
+		unsafe {
+			*val = vmemcmp(decoder.json.str + value_info.position, 'true'.str, 4) == 0
+		}
+	} $else $if T in [$int, $float, $enum] {
+		value_info := decoder.values_info[decoder.value_info_idx]
+
+		if value_info.value_kind == .number {
+			bytes := unsafe { (decoder.json.str + value_info.position).vbytes(value_info.length) }
+
+			unsafe {
+				string_buffer_to_generic_number(val, bytes)
+			}
+		}
 	} $else {
 		return error('cannot encode value with ${typeof(val).name} type')
 	}
+	decoder.value_info_idx++
 }
 
 // get_value_kind returns the kind of a JSON value.
@@ -557,307 +832,6 @@ fn (mut decoder Decoder) decode_optional_value_in_actual_node[T](node Node, val 
 	return T{}
 }
 
-// decode_struct decodes a struct from the JSON nodes.
-fn (mut decoder Decoder) decode_struct[T](nodes []Node, value &T) {
-	$for field in T.fields {
-		for i := 0; i < nodes.len; i++ {
-			mut node := nodes[i]
-
-			if node.key_len == field.name.len {
-				// This `vmemcmp` compares the name of a key in a JSON with a given struct field.
-				if unsafe {
-					vmemcmp(decoder.json.str + node.key_pos, field.name.str, field.name.len) == 0
-				} {
-					start := (node.key_pos + node.key_len) + 3
-					mut end := start
-					for decoder.json[end] != `,` && decoder.json[end] != `}` {
-						end++
-					}
-					value_kind := get_value_kind(decoder.json[start])
-					$if field.indirections != 0 {
-						// REVIEW Needs clone?
-						$if field.indirections == 1 {
-							// TODO
-							// unsafe {
-							// 	value.$(field.name) = &(decoder.json[start + 1..end - 1])
-							// }
-						} $else $if field.indirections == 2 {
-							// TODO
-							// unsafe {
-							// 	value.$(field.name) = &&(decoder.json[start + 1..end - 1])
-							// }
-						} $else $if field.indirections == 3 {
-							// TODO
-							// unsafe {
-							// 	value.$(field.name) = &&&(decoder.json[start + 1..end - 1])
-							// }
-						}
-					} $else $if field.typ is $option {
-						value.$(field.name) = decoder.decode_optional_value_in_actual_node(node,
-							value.$(field.name))
-					} $else $if field.typ is $sumtype {
-						workaround := value.$(field.name)
-						// z := value.$(field.name)
-
-						$for v in workaround.variants {
-							$if v.typ is string {
-								if value_kind == .string_ {
-									// value.$(field.name) = decoder.json[start + 1..end - 1]
-								} else {
-									// value.$(field.name) = decoder.json[start..end]
-								}
-							} $else $if v.typ in [$int, $float] {
-								$if v.typ is u32 {
-									value.$(field.name) = decoder.json[start..end].u32()
-								} $else $if v.typ is u32 {
-								}
-
-								$if v.typ is i8 {
-									value.$(field.name) = decoder.json[start..end].i8()
-								} $else $if v.typ is i16 {
-									value.$(field.name) = decoder.json[start..end].i16()
-								} $else $if v.typ is i32 {
-									value.$(field.name) = decoder.json[start..end].i32()
-								} $else $if v.typ is int {
-									value.$(field.name) = decoder.json[start..end].int()
-								} $else $if v.typ is i64 {
-									value.$(field.name) = decoder.json[start..end].i64()
-								} $else $if v.typ is u8 {
-									value.$(field.name) = decoder.json[start..end].u8()
-								} $else $if v.typ is u16 {
-									value.$(field.name) = decoder.json[start..end].u16()
-								} $else $if v.typ is u32 {
-									value.$(field.name) = decoder.json[start..end].u32()
-								} $else $if v.typ is u64 {
-									value.$(field.name) = decoder.json[start..end].u64()
-								} $else $if v.typ is f32 {
-									value.$(field.name) = decoder.json[start..end].f32()
-								} $else $if v.typ is f64 {
-									value.$(field.name) = decoder.json[start..end].f64()
-								}
-							} $else $if v.typ is bool {
-								if decoder.json[start] == `t` {
-									value.$(field.name) = true
-								} else if decoder.json[start] == `f` {
-									value.$(field.name) = false
-								}
-							} $else $if v.typ is time.Time {
-								if value_kind == .string_ {
-									value.$(field.name) = time.parse(decoder.json[start + 1..end - 1]) or {
-										time.Time{}
-									}
-								}
-							} $else $if v.typ is $struct {
-								if node.children != none {
-									// FIXME
-									// decoder.decode_value(node.children or {
-									// 	panic('It will never happens')
-									// }, value.$(field.name))
-								}
-							} $else $if v.typ is $array {
-								if value_kind == .array {
-									// TODO
-								}
-							} $else $if v.typ is $map {
-								if value_kind == .object {
-									// TODO
-								}
-							} $else $if T is $enum {
-							} $else {
-								eprintln('not supported')
-							}
-						}
-						if value_kind == .string_ {
-							// value.$(field.name) = decoder.json[start + 1..end - 1]
-						} else if decoder.json[start] == `t` {
-							value.$(field.name) = true
-						} else if decoder.json[start] == `f` {
-							value.$(field.name) = false
-						} else if value_kind == .object {
-						} else if value_kind == .array {
-						} else if value_kind == .number {
-							// value.$(field.name) = decoder.json[start..end].int()
-						} else {
-						}
-					} $else $if field.typ is string {
-						value.$(field.name) = if value_kind == .string_ {
-							decoder.json[start + 1..end - 1]
-						} else {
-							decoder.json[start..end]
-						}
-					} $else $if field.typ in [$int, $float] {
-						$if field.typ is i8 {
-							value.$(field.name) = decoder.json[start..end].i8()
-						} $else $if field.typ is i16 {
-							value.$(field.name) = decoder.json[start..end].i16()
-						} $else $if field.typ is i32 {
-							value.$(field.name) = decoder.json[start..end].i32()
-						} $else $if field.typ is int {
-							value.$(field.name) = decoder.json[start..end].int()
-						} $else $if field.typ is i64 {
-							value.$(field.name) = decoder.json[start..end].i64()
-						} $else $if field.typ is u8 {
-							value.$(field.name) = decoder.json[start..end].u8()
-						} $else $if field.typ is u16 {
-							value.$(field.name) = decoder.json[start..end].u16()
-						} $else $if field.typ is u32 {
-							value.$(field.name) = decoder.json[start..end].u32()
-						} $else $if field.typ is u64 {
-							value.$(field.name) = decoder.json[start..end].u64()
-						} $else $if field.typ is f32 {
-							value.$(field.name) = decoder.json[start..end].f32()
-						} $else $if field.typ is f64 {
-							value.$(field.name) = decoder.json[start..end].f64()
-						}
-					} $else $if field.typ is bool {
-						value.$(field.name) = decoder.json[start] == `t`
-					} $else $if field.typ is time.Time {
-						if value_kind == .string_ {
-							value.$(field.name) = time.parse_rfc3339(decoder.json[start + 1..end - 1]) or {
-								time.Time{}
-							}
-						}
-					} $else $if field.typ is $struct {
-						if node.children != none {
-							decoder.decode_value(node.children or { panic('It will never happen') },
-								value.$(field.name))
-						}
-					} $else $if field.typ is $array {
-						if value_kind == .array {
-							// TODO
-						}
-					} $else $if field.typ is $map {
-						if value_kind == .object && node.children != none {
-							decoder.decode_map(node.children or { panic('It will never happen') }, mut
-								value.$(field.name))
-						}
-					} $else $if field.typ is $enum {
-						value.$(field.name) = decoder.json[start..end].int()
-					} $else $if field.typ is $alias {
-						$if field.unaliased_typ is string {
-							if value_kind == .string_ {
-								value.$(field.name) = decoder.json[start + 1..end - 1]
-							}
-						} $else $if field.unaliased_typ is time.Time {
-						} $else $if field.unaliased_typ is bool {
-						} $else $if field.unaliased_typ in [$float, $int] {
-							$if field.unaliased_typ is i8 {
-								value.$(field.name) = decoder.json[start..end].i8()
-							} $else $if field.unaliased_typ is i16 {
-								value.$(field.name) = decoder.json[start..end].i16()
-							} $else $if field.unaliased_typ is i32 {
-								value.$(field.name) = decoder.json[start..end].i32()
-							} $else $if field.unaliased_typ is int {
-								value.$(field.name) = decoder.json[start..end].int()
-							} $else $if field.unaliased_typ is i64 {
-								value.$(field.name) = decoder.json[start..end].i64()
-							} $else $if field.unaliased_typ is u8 {
-								value.$(field.name) = decoder.json[start..end].u8()
-							} $else $if field.unaliased_typ is u16 {
-								value.$(field.name) = decoder.json[start..end].u16()
-							} $else $if field.unaliased_typ is u32 {
-								value.$(field.name) = decoder.json[start..end].u32()
-							} $else $if field.unaliased_typ is u64 {
-								value.$(field.name) = decoder.json[start..end].u64()
-							} $else $if field.unaliased_typ is f32 {
-								value.$(field.name) = decoder.json[start..end].f32()
-							} $else $if field.unaliased_typ is f64 {
-								value.$(field.name) = decoder.json[start..end].f64()
-							}
-						} $else $if field.unaliased_typ is $array {
-							// TODO
-						} $else $if field.unaliased_typ is $struct {
-						} $else $if field.unaliased_typ is $enum {
-							// TODO
-						} $else $if field.unaliased_typ is $sumtype {
-							// TODO
-						} $else {
-							eprintln('the alias ${field.unaliased_typ} cannot be encoded')
-						}
-					} $else {
-						eprintln('not supported')
-					}
-					break
-				}
-			}
-		}
-	}
-}
-
-// decode_map decodes a map from the JSON nodes.
-fn (mut decoder Decoder) decode_map[T](nodes []Node, mut val T) {
-	for i := 0; i < nodes.len; i++ {
-		mut node := nodes[i]
-
-		start := (node.key_pos + node.key_len) + 3
-		mut end := start
-		for decoder.json[end] != `,` && decoder.json[end] != `}` {
-			end++
-		}
-		value_kind := get_value_kind(decoder.json[start])
-		val[decoder.json[node.key_pos..node.key_pos + node.key_len]] = if value_kind == .string_ {
-			decoder.json[start + 1..end - 1]
-		} else {
-			decoder.json[start..end]
-		}
-	}
-}
-
-// fulfill_nodes fills the nodes from the JSON string.
-fn (mut decoder Decoder) fulfill_nodes(mut nodes []Node) {
-	mut inside_string := false
-	mut inside_key := false
-	mut actual_key_len := 0
-
-	for decoder.idx < decoder.json.len {
-		letter := decoder.json[decoder.idx]
-		match letter {
-			` ` {
-				if !inside_string {
-				}
-			}
-			`\"` {
-				if decoder.json[decoder.idx - 1] == `{` || decoder.json[decoder.idx - 2] == `,` {
-					inside_key = true
-				} else if decoder.json[decoder.idx + 1] == `:` {
-					if decoder.json[decoder.idx + 3] == `{` {
-						mut children := []Node{}
-						key_pos := decoder.idx - actual_key_len
-						key_len := actual_key_len
-
-						decoder.idx += 3
-						decoder.fulfill_nodes(mut children)
-
-						nodes << Node{
-							key_pos:  key_pos
-							key_len:  key_len
-							children: children
-						}
-					} else {
-						nodes << Node{
-							key_pos: decoder.idx - actual_key_len
-							key_len: actual_key_len
-						}
-					}
-					inside_key = false
-				}
-				inside_string = !inside_string
-				decoder.idx++
-				continue
-			}
-			`:` {
-				actual_key_len = 0
-			}
-			`,`, `{`, `}`, `[`, `]` {}
-			else {}
-		}
-		if inside_key {
-			actual_key_len++
-		}
-		decoder.idx++
-	}
-}
-
 fn utf8_byte_length(unicode_value u32) int {
 	if unicode_value <= 0x7F {
 		return 1
@@ -870,24 +844,29 @@ fn utf8_byte_length(unicode_value u32) int {
 	}
 }
 
-fn precalculate_string_decoded_space(encoded string) !int {
-	if encoded.len < 2 || encoded[0] != `"` || encoded[encoded.len - 1] != `"` {
+fn (mut decoder Decoder) calculate_string_space_and_escapes() !(int, []int) {
+	// len := decoder.
+	value_info := decoder.values_info[decoder.value_info_idx]
+	len := value_info.length
+	if len < 2 || decoder.json[value_info.position] != `"`
+		|| decoder.json[value_info.position + len - 1] != `"` {
 		return error('Invalid JSON string format')
 	}
 
 	mut space_required := 0
+	mut escape_positions := []int{}
 	mut idx := 1 // Start after the opening quote
 
-	for idx < encoded.len - 1 {
-		current_byte := encoded[idx]
+	for idx < len - 1 {
+		current_byte := decoder.json[idx]
 
 		if current_byte == `\\` {
 			// Escape sequence, handle accordingly
 			idx++
-			if idx >= encoded.len - 1 {
+			if idx >= len - 1 {
 				return error('Invalid escape sequence at the end of string')
 			}
-			escaped_char := encoded[idx]
+			escaped_char := decoder.json[idx]
 			match escaped_char {
 				// All simple escapes take 1 byte of space
 				`/`, `b`, `f`, `n`, `r`, `t`, `"`, `\\` {
@@ -895,15 +874,20 @@ fn precalculate_string_decoded_space(encoded string) !int {
 				}
 				`u` {
 					// Unicode escape sequence \uXXXX
-					if idx + 4 >= encoded.len - 1 {
+					if idx + 4 >= len - 1 {
 						return error('Invalid unicode escape sequence')
 					}
 					// Extract the hex value from the \uXXXX sequence
-					hex_str := encoded.substr(idx + 1, idx + 5)
+					hex_str := decoder.json.substr(idx + 1, idx + 5)
 					unicode_value := u32(strconv.parse_int(hex_str, 16, 32)!)
 					// Determine the number of bytes needed for this Unicode character in UTF-8
 					space_required += utf8_byte_length(unicode_value)
 					idx += 4 // Skip the next 4 hex digits
+
+					// REVIEW: If the Unicode character is a surrogate pair, we need to skip the next \uXXXX sequence?
+
+					// \\uXXXX is 6 bytes, so we need to skip 5 more bytes
+					escape_positions << idx - 5
 				}
 				else {
 					return error('Unknown escape sequence')
@@ -916,5 +900,116 @@ fn precalculate_string_decoded_space(encoded string) !int {
 		idx++
 	}
 
-	return space_required
+	return space_required, escape_positions
+}
+
+// \uXXXX to unicode with 4 hex digits
+fn generate_unicode_escape_sequence(escape_sequence_byte []u8) ![]u8 {
+	if escape_sequence_byte.len != 4 {
+		return error('Invalid unicode escape sequence')
+	}
+
+	unicode_value := u32(strconv.parse_int(escape_sequence_byte.bytestr(), 16, 32)!)
+	mut utf8_bytes := []u8{cap: utf8_byte_length(unicode_value)}
+
+	if unicode_value <= 0x7F {
+		utf8_bytes << u8(unicode_value)
+	} else if unicode_value <= 0x7FF {
+		utf8_bytes << u8(0xC0 | (unicode_value >> 6))
+		utf8_bytes << u8(0x80 | (unicode_value & 0x3F))
+	} else if unicode_value <= 0xFFFF {
+		utf8_bytes << u8(0xE0 | (unicode_value >> 12))
+		utf8_bytes << u8(0x80 | ((unicode_value >> 6) & 0x3F))
+		utf8_bytes << u8(0x80 | (unicode_value & 0x3F))
+	} else {
+		utf8_bytes << u8(0xF0 | (unicode_value >> 18))
+		utf8_bytes << u8(0x80 | ((unicode_value >> 12) & 0x3F))
+		utf8_bytes << u8(0x80 | ((unicode_value >> 6) & 0x3F))
+		utf8_bytes << u8(0x80 | (unicode_value & 0x3F))
+	}
+
+	return utf8_bytes
+}
+
+fn create_array_element[T](array []T) T {
+	return T{}
+}
+
+fn create_from_optional[T](val ?T) T {
+	return T{}
+}
+
+fn create_map_value[K, V](map_ map[K]V) V {
+	return V{}
+}
+
+// string_buffer_to_generic_number converts a buffer of bytes (data) into a generic type T and
+// stores the result in the provided result pointer.
+// The function supports conversion to the following types:
+// - Signed integers: i8, i16, int, i64
+// - Unsigned integers: u8, u16, u32, u64
+// - Floating-point numbers: f32, f64
+//
+// For signed integers, the function handles negative numbers by checking for a '-' character.
+// For floating-point numbers, the function handles decimal points and adjusts the result
+// accordingly.
+//
+// If the type T is not supported, the function will panic with an appropriate error message.
+//
+// Parameters:
+// - data []u8: The buffer of bytes to be converted.
+// - result &T: A pointer to the variable where the converted result will be stored.
+//
+// NOTE: This aims works with not new memory allocated data, to more efficient use `vbytes` before
+@[direct_array_access; unsafe]
+pub fn string_buffer_to_generic_number[T](result &T, data []u8) {
+	mut is_negative := false
+
+	$if T is $int {
+		for ch in data {
+			if ch == `-` {
+				is_negative = true
+				continue
+			}
+			digit := T(ch - `0`)
+			*result = T(*result * 10 + digit)
+		}
+	} $else $if T is $float {
+		mut decimal_seen := false
+		mut decimal_divider := int(1)
+
+		for ch in data {
+			if ch == `-` {
+				is_negative = true
+				continue
+			}
+			if ch == `.` {
+				decimal_seen = true
+				continue
+			}
+
+			digit := T(ch - `0`)
+
+			if decimal_seen {
+				decimal_divider *= 10
+				*result += T(digit / decimal_divider)
+			} else {
+				*result = *result * 10 + digit
+			}
+		}
+	} $else $if T is $enum {
+		// Convert the string to an integer
+		enumeration := 0
+		for ch in data {
+			digit := int(ch - `0`)
+			enumeration = enumeration * 10 + digit
+		}
+		*result = T(enumeration)
+	} $else {
+		panic('unsupported type ${typeof[T]().name}')
+	}
+
+	if is_negative {
+		*result = -*result
+	}
 }
