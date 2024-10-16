@@ -3,13 +3,6 @@ module decoder2
 import time
 import strconv
 
-// Node represents a node in a JSON decoder tree. Used to decode object in JSON.
-struct Node {
-	key_pos  int     // The position of the key in the JSON string.
-	key_len  int     // The length of the key in the JSON string.
-	children ?[]Node // The children nodes of the current node.
-}
-
 // ValueInfo represents the position and length of a value, like string, number, array, object key and object value in a JSON string.
 struct ValueInfo {
 	position   int       // The position of the value in the JSON string.
@@ -800,36 +793,6 @@ fn get_value_kind(value rune) ValueKind {
 		`n` { .null }
 		else { .unknown }
 	}
-}
-
-// decode_optional_value_in_actual_node decodes an optional value in a node.
-fn (mut decoder Decoder) decode_optional_value_in_actual_node[T](node Node, val ?T) T {
-	start := (node.key_pos + node.key_len) + 3
-	mut end := start
-	for decoder.json[end] != `,` && decoder.json[end] != `}` {
-		end++
-	}
-	mut value_kind := get_value_kind(decoder.json[start])
-
-	$if T is string {
-		if value_kind == .string_ {
-			return decoder.json[start + 1..end - 1]
-		} else if value_kind == .object {
-		} else if value_kind == .array {
-		} else {
-			return decoder.json[start..end]
-		}
-		return ''
-	} $else $if T is $int {
-		if value_kind == .string_ {
-			return decoder.json[start + 1..end - 1].int()
-		} else if value_kind == .object {
-		} else if value_kind == .array {
-		} else {
-			return decoder.json[start..end].int()
-		}
-	}
-	return T{}
 }
 
 fn utf8_byte_length(unicode_value u32) int {
