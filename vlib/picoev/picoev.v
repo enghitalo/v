@@ -314,8 +314,7 @@ fn raw_callback(fd int, events int, context voidptr) {
 			}
 			pv.idx[fd] += r
 
-			mut s := unsafe { tos(request_buffer, pv.idx[fd]) }
-			pret := req.parse_request(s) or {
+			pret := req.parse_request_by_buffer(unsafe { request_buffer.vbytes(pv.idx[fd]) }) or {
 				// Parse error
 				pv.error_callback(pv.user_data, req, mut &res, err)
 				return

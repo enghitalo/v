@@ -109,7 +109,7 @@ pub fn (mut r Response) raw(response string) {
 	r.write_string(response)
 }
 
-fn C.send(sockfd int, buf voidptr, len usize, flags int) int
+fn C.send(sockfd int, buf voidptr, len int, flags int) int
 
 @[inline]
 pub fn (mut r Response) end() int {

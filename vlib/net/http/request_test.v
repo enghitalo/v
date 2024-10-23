@@ -162,7 +162,7 @@ Content-Disposition: form-data; name="username"\r
 admin\r
 --${boundary}\r
 Content-Disposition: form-data; name="password"\r
-\r	
+\r
 admin123\r
 --${boundary}--\r
 '
@@ -204,3 +204,75 @@ fn test_parse_large_body() {
 	assert result.data.len == body.len
 	assert result.data == body
 }
+
+
+
+// fn test_picohttpparser_parse_request() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n'
+// 	bytes_read := req.parse_request(raw_request) or { panic('failed to parse request: ${err}') }
+// 	assert bytes_read == raw_request.len
+// 	assert req.method == 'GET'
+// 	assert req.path == '/test'
+// 	assert req.num_headers == 1
+// 	assert req.headers[0].name == 'Host'
+// 	assert req.headers[0].value == 'example.com'
+// }
+
+// fn test_picohttpparser_parse_request_with_body() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 11\r\n\r\nHello World'
+// 	bytes_read := req.parse_request(raw_request) or { panic('failed to parse request: ${err}') }
+// 	assert bytes_read == raw_request.len
+// 	assert req.method == 'POST'
+// 	assert req.path == '/submit'
+// 	assert req.num_headers == 2
+// 	assert req.headers[0].name == 'Host'
+// 	assert req.headers[0].value == 'example.com'
+// 	assert req.headers[1].name == 'Content-Length'
+// 	assert req.headers[1].value == '11'
+// 	assert req.body == 'Hello World'
+// }
+
+// fn test_picohttpparser_parse_request_incomplete() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'GET /test HTTP/1.1\r\nHost: example.com\r\n'
+// 	req.parse_request(raw_request) or {
+// 		assert err.msg() == 'incomplete request'
+// 		return
+// 	}
+// 	panic('should not have parsed')
+// }
+
+// fn test_picohttpparser_parse_request_invalid() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'INVALID REQUEST'
+// 	req.parse_request(raw_request) or {
+// 		assert err.msg() == 'parse error'
+// 		return
+// 	}
+// 	panic('should not have parsed')
+// }
+
+// fn test_picohttpparser_parse_request_path() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'GET /path_only HTTP/1.1\r\n\r\n'
+// 	bytes_read := req.parse_request_path(raw_request) or { panic('failed to parse request path: ${err}') }
+// 	assert bytes_read == raw_request.len
+// 	assert req.method == 'GET'
+// 	assert req.path == '/path_only'
+// }
+
+// fn test_picohttpparser_parse_request_path_pipeline() {
+// 	mut req := picohttpparser.Request{}
+// 	raw_request := 'GET /first HTTP/1.1\r\n\r\nGET /second HTTP/1.1\r\n\r\n'
+// 	bytes_read := req.parse_request_path_pipeline(raw_request) or { panic('failed to parse first request path: ${err}') }
+// 	assert bytes_read == 'GET /first HTTP/1.1\r\n\r\n'.len
+// 	assert req.method == 'GET'
+// 	assert req.path == '/first'
+
+// 	bytes_read = req.parse_request_path_pipeline(raw_request) or { panic('failed to parse second request path: ${err}') }
+// 	assert bytes_read == 'GET /second HTTP/1.1\r\n\r\n'.len
+// 	assert req.method == 'GET'
+// 	assert req.path == '/second'
+// }
