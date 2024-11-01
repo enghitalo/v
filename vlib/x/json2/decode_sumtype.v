@@ -1,4 +1,4 @@
-module decoder2
+module json2
 
 import time
 

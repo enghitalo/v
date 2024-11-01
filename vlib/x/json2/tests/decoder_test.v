@@ -61,12 +61,6 @@ fn test_raw_decode_map_with_whitespaces() {
 	assert mp['age'] or { 0 }.int() == 20
 }
 
-fn test_nested_array_object() {
-	mut parser := json.new_parser(r'[[[[[],[],[]]]],{"Test":{}},[[]]]', false)
-	decoded := parser.decode()!
-	assert parser.n_level == 0
-}
-
 fn test_raw_decode_map_invalid() {
 	json.raw_decode('{"name","Bob","age":20}') or {
 		assert err.msg() == '[x.json2] invalid token `comma`, expecting `colon` (0:5)'

@@ -1,4 +1,4 @@
-import x.json2.decoder2 as json
+import x.json2 as json
 
 fn test_json_escape_low_chars() {
 	assert json.decode[string](r'"\u001b"')! == '\u001b'

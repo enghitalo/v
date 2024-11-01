@@ -31,12 +31,12 @@ const data = '
 }
 '
 
-struct Comment {
+pub struct Comment {
 	id      string
 	message string
 }
 
-struct Comments {
+pub struct Comments {
 mut:
 	comments  map[string]Comment
 	comments2 map[string]bool

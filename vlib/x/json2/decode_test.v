@@ -1,4 +1,4 @@
-module decoder2
+module json2
 
 fn test_check_if_json_match() {
 	// /* Test wrong string values */

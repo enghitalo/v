@@ -40,22 +40,22 @@ pub struct Null {
 
 pub const null = Null{}
 
-// ValueKind enumerates the kinds of possible values of the Any sumtype.
-pub enum ValueKind {
-	unknown
-	array
-	object
-	string_
-	number
-}
+// // ValueKind enumerates the kinds of possible values of the Any sumtype.
+// pub enum ValueKind {
+// 	unknown
+// 	array
+// 	object
+// 	string_
+// 	number
+// }
 
-// str returns the string representation of the specific ValueKind
-pub fn (k ValueKind) str() string {
-	return match k {
-		.unknown { 'unknown' }
-		.array { 'array' }
-		.object { 'object' }
-		.string_ { 'string' }
-		.number { 'number' }
-	}
-}
+// // str returns the string representation of the specific ValueKind
+// pub fn (k ValueKind) str() string {
+// 	return match k {
+// 		.unknown { 'unknown' }
+// 		.array { 'array' }
+// 		.object { 'object' }
+// 		.string_ { 'string' }
+// 		.number { 'number' }
+// 	}
+// }

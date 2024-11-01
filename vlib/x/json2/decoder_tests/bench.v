@@ -1,4 +1,4 @@
-import x.json2.decoder2
+import x.json2
 import json as old_json
 import benchmark
 import time
