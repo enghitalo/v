@@ -10,10 +10,10 @@ type SourceMapJson = map[string]json2.Any
 
 pub struct SourceMap {
 pub mut:
-	version                int               @[json: version]
-	file                   string            @[json: file]
-	source_root            string            @[json: source_root]
-	sources                Sets              @[json: sources]
+	version                int    @[json: version]
+	file                   string @[json: file]
+	source_root            string @[json: source_root]
+	sources                Sets   @[json: sources]
 	sources_content        map[string]string
 	names                  Sets
 	mappings               Mappings
@@ -27,10 +27,10 @@ pub mut:
 
 pub fn new_sourcemap(file string, source_root string, sources_content_inline bool) SourceMap {
 	return SourceMap{
-		version: sourcemap.source_map_version
-		file: file
-		source_root: source_root
-		mappings: new_mappings()
+		version:                source_map_version
+		file:                   file
+		source_root:            source_root
+		mappings:               new_mappings()
 		sources_content_inline: sources_content_inline
 	}
 }

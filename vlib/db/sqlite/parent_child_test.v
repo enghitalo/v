@@ -1,20 +1,20 @@
 import db.sqlite
 
 struct Parent {
-	id       int     @[primary; sql: serial]
+	id       int @[primary; sql: serial]
 	name     string
 	children []Child @[fkey: 'parent_id']
 }
 
 struct Child {
-	id        int    @[primary; sql: serial]
+	id        int @[primary; sql: serial]
 	name      string
 	parent_id int
 	babies    []Baby @[fkey: 'child_id']
 }
 
 struct Baby {
-	id       int    @[primary; sql: serial]
+	id       int @[primary; sql: serial]
 	name     string
 	child_id int
 }
@@ -29,7 +29,7 @@ fn test_main() {
 	} or { panic(err) }
 
 	new_parent := Parent{
-		name: 'first parent'
+		name:     'first parent'
 		children: [
 			Child{
 				name: 'first child'
@@ -46,23 +46,23 @@ fn test_main() {
 
 	babies := [
 		Baby{
-			name: 'first baby'
+			name:     'first baby'
 			child_id: 1
 		},
 		Baby{
-			name: 'second baby'
+			name:     'second baby'
 			child_id: 1
 		},
 		Baby{
-			name: 'third baby'
+			name:     'third baby'
 			child_id: 2
 		},
 		Baby{
-			name: 'fourth baby'
+			name:     'fourth baby'
 			child_id: 2
 		},
 		Baby{
-			name: 'fifth baby'
+			name:     'fifth baby'
 			child_id: 2
 		},
 	]

@@ -7,8 +7,8 @@ pub const align_right = HorizontalAlign.right
 @[params]
 pub struct TextCfg {
 pub:
-	color          Color = black
-	size           int   = 16
+	color          Color           = black
+	size           int             = 16
 	align          HorizontalAlign = .left
 	vertical_align VerticalAlign   = .top
 	max_width      int
@@ -20,7 +20,7 @@ pub:
 
 // to_css_string returns a CSS compatible string of the TextCfg `cfg`.
 // For example: `'mono 14px serif'`.
-pub fn (cfg TextCfg) to_css_string() string {
+pub fn (cfg &TextCfg) to_css_string() string {
 	mut font_style := ''
 	if cfg.bold {
 		font_style += 'bold '

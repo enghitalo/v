@@ -12,34 +12,42 @@ import v.util.version
 
 struct Repl {
 mut:
-	readline    readline.Readline
-	indent      int    // indentation level
-	in_func     bool   // are we inside a new custom user function
-	line        string // the current line entered by the user
-	is_pin      bool   // does the repl 'pin' entered source code
-	folder      string // the folder in which the repl will write its temporary source files
-	last_output string // the last repl output
-	//
-	modules         []string // all the import modules
+	readline     readline.Readline
+	indent       int    // indentation level
+	in_func      bool   // inside function decl
+	in_struct    bool   // inside struct decl
+	in_enum      bool   // inside enum decl
+	in_interface bool   // inside interface decl
+	line         string // the current line entered by the user
+	is_pin       bool   // does the repl 'pin' entered source code
+	folder       string // the folder in which the repl will write its temporary source files
+	last_output  string // the last repl output
+
+	modules         []string          // all the import modules
 	alias           map[string]string // all the alias used in the import
-	includes        []string // all the #include statements
-	functions       []string // all the user function declarations
-	functions_name  []string // all the user function names
-	lines           []string // all the other lines/statements
-	temp_lines      []string // all the temporary expressions/printlns
-	vstartup_lines  []string // lines in the `VSTARTUP` file
-	eval_func_lines []string // same line of the `VSTARTUP` file, but used to test fn type
+	includes        []string          // all the #include statements
+	functions       []string          // all the user function declarations
+	functions_name  []string          // all the user function names
+	structs         []string          // all the struct definitions
+	enums           []string          // all the enum definitions
+	consts          []string          // all the const definitions
+	types           []string          // all the type definitions
+	interfaces      []string          // all the interface definitions
+	lines           []string          // all the other lines/statements
+	temp_lines      []string          // all the temporary expressions/printlns
+	vstartup_lines  []string          // lines in the `VSTARTUP` file
+	eval_func_lines []string          // same line of the `VSTARTUP` file, but used to test fn type
 }
 
 const is_stdin_a_pipe = os.is_atty(0) == 0
 const vexe = os.getenv('VEXE')
+const vquiet = os.getenv('VQUIET') != ''
 const vstartup = os.getenv('VSTARTUP')
 const repl_folder = os.join_path(os.vtmp_dir(), 'repl')
 
 const possible_statement_patterns = [
 	'++',
 	'--',
-	'<<',
 	'//',
 	'/*',
 	'assert ',
@@ -59,20 +67,31 @@ const possible_statement_patterns = [
 ]
 
 enum FnType {
-	@none
+	none
 	void
 	fn_type
+}
+
+enum DeclType {
+	include   // #include ...
+	const     // const ...
+	type      // type ...
+	enum      // enum ...
+	fn        // fn ...
+	struct    // struct ...
+	interface // interface ...
+	stmt      // statement
 }
 
 fn new_repl(folder string) Repl {
 	vstartup_source := os.read_file(vstartup) or { '' }.trim_right('\n\r').split_into_lines()
 	os.mkdir_all(folder) or {}
 	return Repl{
-		readline: readline.Readline{
+		readline:       readline.Readline{
 			skip_empty: true
 		}
-		folder: folder
-		modules: ['os', 'time', 'math']
+		folder:         folder
+		modules:        ['os', 'time', 'math']
 		vstartup_lines: vstartup_source
 		// Test file used to check if a function as a void return or a value return.
 		eval_func_lines: vstartup_source
@@ -84,6 +103,19 @@ fn endline_if_missed(line string) string {
 		return line
 	}
 	return line + '\n'
+}
+
+fn starts_with_type_decl(line string, type_name string) bool {
+	if line.starts_with(type_name + ' ') || line.starts_with(type_name + '\t') {
+		return true
+	}
+	if line.starts_with('pub ') || line.starts_with('pub\t') {
+		substring := line[3..].trim_space()
+		if substring.starts_with(type_name + ' ') || substring.starts_with(type_name + '\t') {
+			return true
+		}
+	}
+	return false
 }
 
 fn repl_help() {
@@ -129,13 +161,13 @@ fn (mut r Repl) checks() bool {
 			r.indent--
 			if r.indent == 0 {
 				r.in_func = false
+				r.in_struct = false
+				r.in_enum = false
+				r.in_interface = false
 			}
 		}
-		if i + 2 < r.line.len && r.indent == 0 && r.line[i + 1] == `f` && r.line[i + 2] == `n` {
-			r.in_func = true
-		}
 	}
-	return r.in_func || (was_indent && r.indent <= 0) || r.indent > 0
+	return (was_indent && r.indent <= 0) || r.indent > 0
 }
 
 fn (r &Repl) function_call(line string) (bool, FnType) {
@@ -151,7 +183,7 @@ fn (r &Repl) function_call(line string) (bool, FnType) {
 	if line.contains(':=') {
 		// an assignment to a variable:
 		// `z := abc()`
-		return false, FnType.@none
+		return false, FnType.none
 	}
 
 	// Check if it is a Vlib call
@@ -160,7 +192,7 @@ fn (r &Repl) function_call(line string) (bool, FnType) {
 		fntype := r.check_fn_type_kind(line)
 		return true, fntype
 	}
-	return false, FnType.@none
+	return false, FnType.none
 }
 
 // TODO(vincenzopalazzo) Remove this fancy check and add a regex
@@ -184,8 +216,7 @@ fn (r &Repl) import_to_source_code() []string {
 }
 
 fn (r &Repl) current_source_code(should_add_temp_lines bool, not_add_print bool) string {
-	mut all_lines := []string{}
-	all_lines.insert(0, r.import_to_source_code())
+	mut all_lines := r.import_to_source_code()
 
 	if vstartup != '' {
 		mut lines := []string{}
@@ -197,11 +228,57 @@ fn (r &Repl) current_source_code(should_add_temp_lines bool, not_add_print bool)
 		all_lines << lines
 	}
 	all_lines << r.includes
+	all_lines << r.types
+	all_lines << r.enums
+	all_lines << r.consts
+	all_lines << r.structs
+	all_lines << r.interfaces
 	all_lines << r.functions
 	all_lines << r.lines
 
 	if should_add_temp_lines {
 		all_lines << r.temp_lines
+	}
+	return all_lines.join('\n')
+}
+
+fn (r &Repl) insert_source_code(typ DeclType, lines []string) string {
+	mut all_lines := r.import_to_source_code()
+
+	if vstartup != '' {
+		all_lines << r.vstartup_lines.filter(!it.starts_with('print'))
+	}
+	all_lines << r.includes
+	if typ == .include {
+		all_lines << lines
+	}
+	all_lines << r.types
+	if typ == .type {
+		all_lines << lines
+	}
+	all_lines << r.enums
+	if typ == .enum {
+		all_lines << lines
+	}
+	all_lines << r.consts
+	if typ == .const {
+		all_lines << lines
+	}
+	all_lines << r.structs
+	if typ == .struct {
+		all_lines << lines
+	}
+	all_lines << r.interfaces
+	if typ == .interface {
+		all_lines << lines
+	}
+	all_lines << r.functions
+	if typ == .fn {
+		all_lines << lines
+	}
+	all_lines << r.lines
+	if typ == .stmt {
+		all_lines << lines
 	}
 	return all_lines.join('\n')
 }
@@ -269,6 +346,9 @@ fn highlight_repl_command(command string) string {
 }
 
 fn print_welcome_screen() {
+	if vquiet {
+		return
+	}
 	cmd_exit := highlight_repl_command('exit')
 	cmd_list := highlight_repl_command('list')
 	cmd_help := highlight_repl_command('help')
@@ -334,6 +414,7 @@ fn run_repl(workdir string, vrepl_prefix string) int {
 		cleanup_files(temp_file)
 	}
 	mut r := new_repl(workdir)
+
 	for {
 		if r.indent == 0 {
 			prompt = '>>> '
@@ -370,18 +451,35 @@ fn run_repl(workdir string, vrepl_prefix string) int {
 			r.in_func = true
 			r.functions_name << r.line.all_before(':= fn(').trim_space()
 		}
-		if r.line.starts_with('fn ') {
+
+		starts_with_fn := starts_with_type_decl(r.line, 'fn')
+		if starts_with_fn {
 			r.in_func = true
 			r.functions_name << r.line.all_after('fn').all_before('(').trim_space()
 		}
 		was_func := r.in_func
+
+		starts_with_struct := starts_with_type_decl(r.line, 'struct')
+		if starts_with_struct {
+			r.in_struct = true
+		}
+		was_struct := r.in_struct
+
+		starts_with_enum := starts_with_type_decl(r.line, 'enum')
+		if starts_with_enum {
+			r.in_enum = true
+		}
+		was_enum := r.in_enum
+
+		starts_with_interface := starts_with_type_decl(r.line, 'interface')
+		if starts_with_interface {
+			r.in_interface = true
+		}
+		was_interface := r.in_interface
+
 		if r.checks() {
 			for rline in r.line.split('\n') {
-				if r.in_func || was_func {
-					r.functions << rline
-				} else {
-					r.temp_lines << rline
-				}
+				r.temp_lines << rline
 			}
 			if r.indent > 0 {
 				continue
@@ -436,7 +534,6 @@ fn run_repl(workdir string, vrepl_prefix string) int {
 				r.lines << trans_line
 			}
 		} else {
-			mut temp_line := r.line
 			func_call, fntype := r.function_call(r.line)
 			filter_line := r.line.replace(r.line.find_between("'", "'"), '').replace(r.line.find_between('"',
 				'"'), '')
@@ -460,51 +557,108 @@ fn run_repl(workdir string, vrepl_prefix string) int {
 			if r.line.count('(') != r.line.count(')') {
 				is_statement = true
 			}
+
 			if !is_statement && (!func_call || fntype == FnType.fn_type) && r.line != '' {
-				temp_line = 'println(${r.line})'
-				source_code := r.current_source_code(false, false) + '\n${temp_line}\n'
+				print_line := 'println(${r.line})'
+				source_code := r.current_source_code(false, false) + '\n${print_line}\n'
 				os.write_file(temp_file, source_code) or { panic(err) }
 				s := repl_run_vfile(temp_file) or { return 1 }
-				if s.output.len > r.last_output.len {
-					cur_line_output := s.output[r.last_output.len..]
-					print_output(cur_line_output)
-					if s.exit_code == 0 {
+				if s.exit_code == 0 {
+					if s.output.len > r.last_output.len {
+						cur_line_output := s.output[r.last_output.len..]
+						print_output(cur_line_output)
 						r.last_output = s.output.clone()
-						r.lines << temp_line
+						r.lines << print_line
+					}
+					continue
+				} else {
+					if s.output.len > r.last_output.len {
+						cur_line_output := s.output[r.last_output.len..]
+						if cur_line_output.contains('undefined ident:') {
+							print_output(cur_line_output)
+							continue
+						}
 					}
 				}
-				continue
 			}
+
+			starts_with_const := starts_with_type_decl(r.line, 'const')
+			starts_with_type := starts_with_type_decl(r.line, 'type')
+			starts_with_import := r.line.starts_with('import ') || r.line.starts_with('import\t')
+			starts_with_include := r.line.starts_with('#include ')
+				|| r.line.starts_with('#include\t')
 			mut temp_source_code := ''
-			if temp_line.starts_with('import ') {
+
+			if starts_with_import {
 				mod := r.line.fields()[1]
 				if mod !in r.modules {
-					temp_source_code = '${temp_line}\n' + r.current_source_code(false, true)
+					temp_source_code = '${r.line}\n' + r.current_source_code(false, true)
 				}
-			} else if temp_line.starts_with('#include ') {
-				temp_source_code = '${temp_line}\n' + r.current_source_code(false, false)
-			} else if temp_line.starts_with('fn ') {
-				temp_source_code = r.current_source_code(false, false)
+			} else if r.line.len == 0 {
+				if was_func {
+					temp_source_code = r.insert_source_code(DeclType.fn, r.temp_lines)
+				} else if was_struct {
+					temp_source_code = r.insert_source_code(DeclType.struct, r.temp_lines)
+				} else if was_enum {
+					temp_source_code = r.insert_source_code(DeclType.enum, r.temp_lines)
+				} else if was_interface {
+					temp_source_code = r.insert_source_code(DeclType.interface, r.temp_lines)
+				} else {
+					temp_source_code = r.insert_source_code(DeclType.stmt, r.temp_lines)
+				}
+			} else if starts_with_include {
+				temp_source_code = r.insert_source_code(DeclType.include, [r.line])
+			} else if starts_with_fn {
+				temp_source_code = r.insert_source_code(DeclType.fn, [r.line])
+			} else if starts_with_const {
+				temp_source_code = r.insert_source_code(DeclType.const, [r.line])
+			} else if starts_with_enum {
+				temp_source_code = r.insert_source_code(DeclType.enum, [r.line])
+			} else if starts_with_struct {
+				temp_source_code = r.insert_source_code(DeclType.struct, [r.line])
+			} else if starts_with_interface {
+				temp_source_code = r.insert_source_code(DeclType.interface, [r.line])
+			} else if starts_with_type {
+				temp_source_code = r.insert_source_code(DeclType.type, [r.line])
 			} else {
-				temp_source_code = r.current_source_code(true, false) + '\n${temp_line}\n'
+				temp_source_code = r.current_source_code(true, false) + '\n${r.line}\n'
 			}
 			os.write_file(temp_file, temp_source_code) or { panic(err) }
 			s := repl_run_vfile(temp_file) or { return 1 }
 			if s.exit_code == 0 {
-				r.lines << r.temp_lines
-				r.temp_lines.clear()
-				if r.line.starts_with('import ') {
+				if starts_with_import {
 					r.parse_import(r.line)
-				} else if r.line.starts_with('#include ') {
+				} else if r.line.len == 0 {
+					if was_func {
+						r.functions << r.temp_lines
+					} else if was_struct {
+						r.structs << r.temp_lines
+					} else if was_enum {
+						r.enums << r.temp_lines
+					} else if was_interface {
+						r.interfaces << r.temp_lines
+					} else {
+						r.lines << r.temp_lines
+					}
+				} else if starts_with_include {
 					r.includes << r.line
-				} else if r.line.starts_with('fn ') {
+				} else if starts_with_fn {
 					r.functions << r.line
+				} else if starts_with_const {
+					r.consts << r.line
+				} else if starts_with_enum {
+					r.enums << r.line
+				} else if starts_with_type {
+					r.types << r.line
+				} else if starts_with_struct {
+					r.structs << r.line
+				} else if starts_with_interface {
+					r.interfaces << r.line
 				} else {
 					r.lines << r.line
 				}
-			} else {
-				r.temp_lines.clear()
 			}
+			r.temp_lines.clear()
 			if r.is_pin {
 				r.pin()
 				println('')

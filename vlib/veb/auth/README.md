@@ -29,7 +29,7 @@ pub struct Context {
 }
 
 struct User {
-	id            int    @[primary; sql: serial]
+	id            int @[primary; sql: serial]
 	name          string
 	password_hash string
 	salt          string
@@ -47,9 +47,9 @@ fn main() {
 pub fn (mut app App) register_user(mut ctx Context, name string, password string) veb.Result {
 	salt := auth.generate_salt()
 	new_user := User{
-		name: name
+		name:          name
 		password_hash: auth.hash_password_with_salt(password, salt)
-		salt: salt
+		salt:          salt
 	}
 	sql app.db {
 		insert new_user into User
@@ -98,4 +98,3 @@ algorithm and multiple iterations.
 
 See also:
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
-

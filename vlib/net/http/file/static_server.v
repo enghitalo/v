@@ -10,10 +10,10 @@ import net.http.mime
 @[params]
 pub struct StaticServeParams {
 pub mut:
-	folder         string        = '.' // the folder, that will be used as a base for serving all static resources; If it was /tmp, then: http://localhost:4001/x.txt => /tmp/x.txt
-	index_file     string        = 'index.html' // A request for http://localhost:4001/ will map to index.html, if that file is present.
-	auto_index     bool          = true // when an index_file is *not* present, a request for http://localhost:4001/ will list automatically all files in the folder.
-	filter_myexe   bool          = true // whether to filter the name of the static file executable from the automatic folder listings for / . Useful with `v -e 'import net.http.file; file.serve()'`
+	folder         string        = '.'              // the folder, that will be used as a base for serving all static resources; If it was /tmp, then: http://localhost:4001/x.txt => /tmp/x.txt
+	index_file     string        = 'index.html'     // A request for http://localhost:4001/ will map to index.html, if that file is present.
+	auto_index     bool          = true             // when an index_file is *not* present, a request for http://localhost:4001/ will list automatically all files in the folder.
+	filter_myexe   bool          = true             // whether to filter the name of the static file executable from the automatic folder listings for / . Useful with `v -e 'import net.http.file; file.serve()'`
 	on             string        = 'localhost:4001' // on which address:port to listen for http requests
 	workers        int           = runtime.nr_jobs() // how many worker threads to use for serving the responses, by default it is limited to the number of available cores; can be controlled with setting VJOBS
 	shutdown_after time.Duration = time.infinite // after this time has passed, the webserver will gracefully shutdown on its own
@@ -33,10 +33,10 @@ pub fn serve(params StaticServeParams) {
 	mut nparams := params
 	nparams.folder = os.norm_path(os.real_path(params.folder))
 	mut server := &http.Server{
-		handler: StaticHttpHandler{
+		handler:    StaticHttpHandler{
 			params: nparams
 		}
-		addr: params.on
+		addr:       params.on
 		worker_num: params.workers
 	}
 	if params.shutdown_after != time.infinite {
@@ -78,11 +78,11 @@ fn (mut h StaticHttpHandler) handle(req http.Request) http.Response {
 	}
 	if !os.exists(requested_file_path) {
 		res.set_status(.not_found)
-		res.body = file.no_such_file_doc
+		res.body = no_such_file_doc
 		res.header.add(.content_type, 'text/html; charset=utf-8')
 		return res
 	}
-	//
+
 	mut body := ''
 	mut content_type := 'text/html; charset=utf-8'
 	if os.is_dir(requested_file_path) {
@@ -98,7 +98,7 @@ fn (mut h StaticHttpHandler) handle(req http.Request) http.Response {
 		} else {
 			body = os.read_file(ipath) or {
 				res.set_status(.not_found)
-				file.no_such_file_doc
+				no_such_file_doc
 			}
 		}
 	} else {

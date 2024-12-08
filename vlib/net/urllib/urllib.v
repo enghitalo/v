@@ -165,7 +165,7 @@ fn unescape(s_ string, mode EncodingMode) !string {
 					if s.len > 3 {
 						s = s[..3]
 					}
-					return error(error_msg(urllib.err_msg_escape, s))
+					return error(error_msg(err_msg_escape, s))
 				}
 				// Per https://tools.ietf.org/html/rfc3986#page-21
 				// in the host component %-encoding can only be used
@@ -175,7 +175,7 @@ fn unescape(s_ string, mode EncodingMode) !string {
 				// in IPv6 scoped-address literals. Yay.
 				if i + 3 >= s.len && mode == .encode_host && unhex(s[i + 1]) < 8
 					&& s[i..i + 3] != '%25' {
-					return error(error_msg(urllib.err_msg_escape, s[i..i + 3]))
+					return error(error_msg(err_msg_escape, s[i..i + 3]))
 				}
 				if mode == .encode_zone {
 					// RFC 6874 says basically 'anything goes' for zone identifiers
@@ -190,7 +190,7 @@ fn unescape(s_ string, mode EncodingMode) !string {
 					}
 					v := ((unhex(s[i + 1]) << u8(4)) | unhex(s[i + 2]))
 					if s[i..i + 3] != '%25' && v != ` ` && should_escape(v, .encode_host) {
-						error(error_msg(urllib.err_msg_escape, s[i..i + 3]))
+						error(error_msg(err_msg_escape, s[i..i + 3]))
 					}
 				}
 				i += 3
@@ -317,14 +317,14 @@ fn escape(s string, mode EncodingMode) string {
 pub struct URL {
 pub mut:
 	scheme      string
-	opaque      string    // encoded opaque data
+	opaque      string // encoded opaque data
 	user        &Userinfo = unsafe { nil } // username and password information
-	host        string    // host or host:port
-	path        string    // path (relative paths may omit leading slash)
-	raw_path    string    // encoded path hint (see escaped_path method)
-	force_query bool      // append a query ('?') even if raw_query is empty
-	raw_query   string    // encoded query values, without '?'
-	fragment    string    // fragment for references, without '#'
+	host        string // host or host:port
+	path        string // path (relative paths may omit leading slash)
+	raw_path    string // encoded path hint (see escaped_path method)
+	force_query bool   // append a query ('?') even if raw_query is empty
+	raw_query   string // encoded query values, without '?'
+	fragment    string // fragment for references, without '#'
 }
 
 // debug returns a string representation of *ALL* the fields of the given URL
@@ -336,8 +336,8 @@ pub fn (url &URL) debug() string {
 // and no password set.
 pub fn user(username string) &Userinfo {
 	return &Userinfo{
-		username: username
-		password: ''
+		username:     username
+		password:     ''
 		password_set: false
 	}
 }
@@ -436,12 +436,11 @@ fn split(s string, sep u8, cutc bool) (string, string) {
 pub fn parse(rawurl string) !URL {
 	// Cut off #frag
 	u, frag := split(rawurl, `#`, true)
-	mut url := parse_url(u, false) or { return error(error_msg(urllib.err_msg_parse, u)) }
+	mut url := parse_url(u, false) or { return error(error_msg(err_msg_parse, u)) }
 	if frag == '' {
 		return url
 	}
-	f := unescape(frag, .encode_fragment) or { return error(error_msg(urllib.err_msg_parse,
-		u)) }
+	f := unescape(frag, .encode_fragment) or { return error(error_msg(err_msg_parse, u)) }
 	url.fragment = f
 	return url
 }

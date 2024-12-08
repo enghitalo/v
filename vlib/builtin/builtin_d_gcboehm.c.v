@@ -1,6 +1,14 @@
 module builtin
 
-#flag -DGC_THREADS=1
+$if !no_gc_threads ? {
+	#flag -DGC_THREADS=1
+}
+
+$if use_bundled_libgc ? {
+	#flag -DGC_BUILTIN_ATOMIC=1
+	#flag -I @VEXEROOT/thirdparty/libgc/include
+	#flag @VEXEROOT/thirdparty/libgc/gc.o
+}
 
 $if dynamic_boehm ? {
 	$if windows {
@@ -14,7 +22,7 @@ $if dynamic_boehm ? {
 		} $else {
 			#flag -DGC_WIN32_THREADS=1
 			#flag -DGC_BUILTIN_ATOMIC=1
-			#flag -I @VEXEROOT/thirdparty/libgc
+			#flag -I @VEXEROOT/thirdparty/libgc/include
 			#flag @VEXEROOT/thirdparty/libgc/gc.o
 		}
 	} $else {
@@ -38,11 +46,13 @@ $if dynamic_boehm ? {
 	$if macos || linux {
 		#flag -DGC_BUILTIN_ATOMIC=1
 		#flag -I @VEXEROOT/thirdparty/libgc/include
-		$if (prod && !tinyc && !debug) || !(amd64 || arm64 || i386 || arm32) {
+		$if (prod && !tinyc && !debug) || !(amd64 || arm64 || i386 || arm32 || rv64) {
 			// TODO: replace the architecture check with a `!$exists("@VEXEROOT/thirdparty/tcc/lib/libgc.a")` comptime call
 			#flag @VEXEROOT/thirdparty/libgc/gc.o
 		} $else {
-			#flag @VEXEROOT/thirdparty/tcc/lib/libgc.a
+			$if !use_bundled_libgc ? {
+				#flag @VEXEROOT/thirdparty/tcc/lib/libgc.a
+			}
 		}
 		$if macos {
 			#flag -DMPROTECT_VDB=1
@@ -50,7 +60,7 @@ $if dynamic_boehm ? {
 		#flag -ldl
 		#flag -lpthread
 	} $else $if freebsd {
-		// Tested on FreeBSD 13.0-RELEASE-p3, with clang, gcc and tcc:
+		// Tested on FreeBSD 13.0-RELEASE-p3, with clang, gcc and tcc
 		#flag -DGC_BUILTIN_ATOMIC=1
 		#flag -DBUS_PAGE_FAULT=T_PAGEFLT
 		$if !tinyc {
@@ -65,9 +75,17 @@ $if dynamic_boehm ? {
 		}
 		#flag -lpthread
 	} $else $if openbsd {
+		// Tested on OpenBSD 7.5, with clang, gcc and tcc
 		#flag -DGC_BUILTIN_ATOMIC=1
-		#flag -I/usr/local/include
-		#flag $first_existing("/usr/local/lib/libgc.a", "/usr/lib/libgc.a")
+		$if !tinyc {
+			#flag -I @VEXEROOT/thirdparty/libgc/include
+			#flag @VEXEROOT/thirdparty/libgc/gc.o
+		}
+		$if tinyc {
+			#flag -I/usr/local/include
+			#flag $first_existing("/usr/local/lib/libgc.a", "/usr/lib/libgc.a")
+			#flag -lgc
+		}
 		#flag -lpthread
 	} $else $if windows {
 		#flag -DGC_NOT_DLL=1
@@ -76,7 +94,9 @@ $if dynamic_boehm ? {
 		$if tinyc {
 			#flag -DGC_BUILTIN_ATOMIC=1
 			#flag -I @VEXEROOT/thirdparty/libgc/include
-			#flag @VEXEROOT/thirdparty/tcc/lib/libgc.a
+			$if !use_bundled_libgc ? {
+				#flag @VEXEROOT/thirdparty/tcc/lib/libgc.a
+			}
 		} $else $if msvc {
 			// Build libatomic_ops
 			#flag @VEXEROOT/thirdparty/libatomic_ops/atomic_ops.o
@@ -102,7 +122,12 @@ $if gcboehm_leak ? {
 	#flag -DGC_DEBUG=1
 }
 
+$if windows && msvc {
+	#flag ucrtd.lib
+}
+
 #include <gc.h>
+
 // #include <gc/gc_mark.h>
 
 // replacements for `malloc()/calloc()`, `realloc()` and `free()`

@@ -34,7 +34,7 @@ fn C.tcgetattr(fd int, termios_p &C.termios) int
 
 fn C.tcsetattr(fd int, optional_actions int, const_termios_p &C.termios) int
 
-fn C.ioctl(fd int, request u64, arg voidptr) int
+fn C.ioctl(fd int, request u64, args ...voidptr) int
 
 // flag provides a termios flag of the correct size
 // for the underlying C.termios structure
@@ -94,5 +94,5 @@ pub fn set_state(fd int, new_state Termios) int {
 // disable_echo disables echoing characters as they are typed,
 // when that Termios state is later set with termios.set_state(fd,t)
 pub fn (mut t Termios) disable_echo() {
-	t.c_lflag &= invert(C.ECHO)
+	t.c_lflag &= invert(usize(C.ECHO))
 }

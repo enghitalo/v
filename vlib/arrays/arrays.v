@@ -249,12 +249,8 @@ pub fn sum[T](array []T) !T {
 	} else {
 		mut head := array[0]
 
-		for i, e in array {
-			if i == 0 {
-				continue
-			} else {
-				head += e
-			}
+		for e in array[1..] {
+			head += e
 		}
 
 		return head
@@ -272,12 +268,8 @@ pub fn reduce[T](array []T, reduce_op fn (acc T, elem T) T) !T {
 	} else {
 		mut value := array[0]
 
-		for i, e in array {
-			if i == 0 {
-				continue
-			} else {
-				value = reduce_op(value, e)
-			}
+		for e in array[1..] {
+			value = reduce_op(value, e)
 		}
 
 		return value
@@ -331,7 +323,12 @@ pub fn filter_indexed[T](array []T, predicate fn (idx int, elem T) bool) []T {
 // assert r == 5
 // ```
 pub fn fold[T, R](array []T, init R, fold_op fn (acc R, elem T) R) R {
-	mut value := init
+	mut value := R{}
+	$if R is $array {
+		value = init.clone()
+	} $else {
+		value = init
+	}
 
 	for e in array {
 		value = fold_op(value, e)
@@ -609,19 +606,19 @@ const extra_size = 32 * isize(sizeof(usize))
 
 fn raw_array_cap[T]() isize {
 	size := isize(sizeof(T))
-	if size > arrays.extra_size {
+	if size > extra_size {
 		return 1
 	} else {
-		return arrays.extra_size / size
+		return extra_size / size
 	}
 }
 
 fn raw_array_malloc_size[T]() isize {
 	size := isize(sizeof(T))
-	if size > arrays.extra_size {
+	if size > extra_size {
 		return size * 2
 	} else {
-		return arrays.extra_size
+		return extra_size
 	}
 }
 

@@ -9,7 +9,7 @@ __global g_desc C.sapp_desc
 
 pub fn create_desc() gfx.Desc {
 	return gfx.Desc{
-		environment: glue_environment()
+		environment:     glue_environment()
 		image_pool_size: 1000
 	}
 }
@@ -17,7 +17,7 @@ pub fn create_desc() gfx.Desc {
 // create_default_pass creates a default `gfx.Pass` compatible with `sapp` and `sokol.gfx.begin_pass/1`.
 pub fn create_default_pass(action gfx.PassAction) gfx.Pass {
 	return gfx.Pass{
-		action: action
+		action:    action
 		swapchain: glue_swapchain()
 	}
 }
@@ -28,8 +28,8 @@ pub fn create_default_pass(action gfx.PassAction) gfx.Pass {
 pub fn glue_environment() gfx.Environment {
 	mut env := gfx.Environment{}
 	unsafe { vmemset(&env, 0, int(sizeof(env))) }
-	env.defaults.color_format = gfx.PixelFormat.from(color_format()) or { gfx.PixelFormat.@none }
-	env.defaults.depth_format = gfx.PixelFormat.from(depth_format()) or { gfx.PixelFormat.@none }
+	env.defaults.color_format = gfx.PixelFormat.from(color_format()) or { gfx.PixelFormat.none }
+	env.defaults.depth_format = gfx.PixelFormat.from(depth_format()) or { gfx.PixelFormat.none }
 	env.defaults.sample_count = sample_count()
 	$if macos && !darwin_sokol_glcore33 ? {
 		env.metal.device = metal_get_device()
@@ -51,8 +51,8 @@ pub fn glue_swapchain() gfx.Swapchain {
 	swapchain.width = width()
 	swapchain.height = height()
 	swapchain.sample_count = sample_count()
-	swapchain.color_format = gfx.PixelFormat.from(color_format()) or { gfx.PixelFormat.@none }
-	swapchain.depth_format = gfx.PixelFormat.from(depth_format()) or { gfx.PixelFormat.@none }
+	swapchain.color_format = gfx.PixelFormat.from(color_format()) or { gfx.PixelFormat.none }
+	swapchain.depth_format = gfx.PixelFormat.from(depth_format()) or { gfx.PixelFormat.none }
 	$if macos && !darwin_sokol_glcore33 ? {
 		swapchain.metal.current_drawable = metal_get_current_drawable()
 		swapchain.metal.depth_stencil_texture = metal_get_depth_stencil_texture()
@@ -211,7 +211,7 @@ pub fn frame_duration() f64 {
 // write string into clipboard
 @[inline]
 pub fn set_clipboard_string(str &u8) {
-	C.sapp_set_clipboard_string(str)
+	C.sapp_set_clipboard_string(&char(str))
 }
 
 // read string from clipboard (usually during SAPP_EVENTTYPE_CLIPBOARD_PASTED)
@@ -252,17 +252,17 @@ pub fn metal_get_device() voidptr {
 
 // Metal: get ARC-bridged pointer to current drawable
 pub fn metal_get_current_drawable() voidptr {
-	return C.sapp_metal_get_current_drawable()
+	return voidptr(C.sapp_metal_get_current_drawable())
 }
 
 // Metal: get bridged pointer to MTKView's depth-stencil texture of type MTLTexture
 pub fn metal_get_depth_stencil_texture() voidptr {
-	return C.sapp_metal_get_depth_stencil_texture()
+	return voidptr(C.sapp_metal_get_depth_stencil_texture())
 }
 
 // Metal: get bridged pointer to MTKView's msaa-color-texture of type MTLTexture (may be null)
 pub fn metal_get_msaa_color_texture() voidptr {
-	return C.sapp_metal_get_msaa_color_texture()
+	return voidptr(C.sapp_metal_get_msaa_color_texture())
 }
 
 // macOS: get ARC-bridged pointer to macOS NSWindow
@@ -298,7 +298,7 @@ pub fn d3d11_get_render_view() voidptr {
 // D3D11: get pointer ID3D11RenderTargetView object for msaa-resolve (may return null)
 @[inline]
 pub fn d3d11_get_resolve_view() voidptr {
-	return C.sapp_d3d11_get_resolve_view()
+	return voidptr(C.sapp_d3d11_get_resolve_view())
 }
 
 // D3D11: get pointer to ID3D11DepthStencilView
@@ -315,22 +315,22 @@ pub fn win32_get_hwnd() voidptr {
 
 // WebGPU: get WGPUDevice handle
 pub fn wgpu_get_device() voidptr {
-	return C.sapp_wgpu_get_device()
+	return voidptr(C.sapp_wgpu_get_device())
 }
 
 // WebGPU: get swapchain's WGPUTextureView handle for rendering
 pub fn wgpu_get_render_view() voidptr {
-	return C.sapp_wgpu_get_render_view()
+	return voidptr(C.sapp_wgpu_get_render_view())
 }
 
 // WebGPU: get swapchain's MSAA-resolve WGPUTextureView (may return null)
 pub fn wgpu_get_resolve_view() voidptr {
-	return C.sapp_wgpu_get_resolve_view()
+	return voidptr(C.sapp_wgpu_get_resolve_view())
 }
 
 // WebGPU: get swapchain's WGPUTextureView for the depth-stencil surface
 pub fn wgpu_get_depth_stencil_view() voidptr {
-	return C.sapp_wgpu_get_depth_stencil_view()
+	return voidptr(C.sapp_wgpu_get_depth_stencil_view())
 }
 
 // GL: get framebuffer object

@@ -44,8 +44,9 @@ fn decode_struct[T](doc Any, mut typ T) {
 				field_name = attr.all_after(':').trim_space()
 			}
 		}
-		if !skip {
-			value := doc.value(field_name)
+		value := doc.value(field_name)
+		// only set the field's value when value != null and !skip, else field got it's default value
+		if !skip && value != null {
 			$if field.is_enum {
 				typ.$(field.name) = value.int()
 			} $else $if field.typ is string {
@@ -68,6 +69,8 @@ fn decode_struct[T](doc Any, mut typ T) {
 				typ.$(field.name) = value.date()
 			} $else $if field.typ is Time {
 				typ.$(field.name) = value.time()
+			} $else $if field.typ is Any {
+				typ.$(field.name) = value
 			} $else $if field.is_array {
 				arr := value.array()
 				match field.typ {
@@ -81,6 +84,7 @@ fn decode_struct[T](doc Any, mut typ T) {
 					[]DateTime { typ.$(field.name) = arr.map(it.datetime()) }
 					[]Date { typ.$(field.name) = arr.map(it.date()) }
 					[]Time { typ.$(field.name) = arr.map(it.time()) }
+					[]Any { typ.$(field.name) = arr }
 					else {}
 				}
 			} $else $if field.is_map {
@@ -145,6 +149,9 @@ fn decode_struct[T](doc Any, mut typ T) {
 							fn (k string, v Any) (string, Time) {
 							return k, v.time()
 						})
+					}
+					map[string]Any {
+						typ.$(field.name) = mmap.clone()
 					}
 					else {}
 				}
@@ -211,6 +218,8 @@ fn to_any[T](value T) Any {
 		return Any(value)
 	} $else $if T is DateTime {
 		return Any(value)
+	} $else $if T is Any {
+		return value
 	} $else $if T is $struct {
 		$for method in T.methods {
 			$if method.name == 'to_toml' {
@@ -406,7 +415,7 @@ pub fn (d Doc) reflect[T]() T {
 // quoted keys are supported as `a."b.c"` or `a.'b.c'`.
 // Arrays can be queried with `a[0].b[1].[2]`.
 pub fn (d Doc) value(key string) Any {
-	key_split := parse_dotted_key(key) or { return toml.null }
+	key_split := parse_dotted_key(key) or { return null }
 	return d.value_(d.ast.table, key_split)
 }
 
@@ -426,21 +435,21 @@ pub fn (d Doc) value_opt(key string) !Any {
 // value_ returns the value found at `key` in the map `values` as `Any` type.
 fn (d Doc) value_(value ast.Value, key []string) Any {
 	if key.len == 0 {
-		return toml.null
+		return null
 	}
 	mut ast_value := ast.Value(ast.Null{})
 	k, index := parse_array_key(key[0])
 
 	if k == '' {
 		a := value as []ast.Value
-		ast_value = a[index] or { return toml.null }
+		ast_value = a[index] or { return null }
 	}
 
 	if value is map[string]ast.Value {
-		ast_value = value[k] or { return toml.null }
+		ast_value = value[k] or { return null }
 		if index > -1 {
 			a := ast_value as []ast.Value
-			ast_value = a[index] or { return toml.null }
+			ast_value = a[index] or { return null }
 		}
 	}
 
@@ -518,11 +527,11 @@ pub fn ast_to_any(value ast.Value) Any {
 			return aa
 		}
 		else {
-			return toml.null
+			return null
 		}
 	}
 
-	return toml.null
+	return null
 	// TODO: decide this
 	// panic(@MOD + '.' + @STRUCT + '.' + @FN + ' can\'t convert "$value"')
 	// return Any('')

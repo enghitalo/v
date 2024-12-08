@@ -37,7 +37,7 @@ pub fn new_ssl_conn(config SSLConnectConfig) !&SSLConn {
 	mut conn := &SSLConn{
 		config: config
 		sslctx: unsafe { nil }
-		ssl: unsafe { nil }
+		ssl:    unsafe { nil }
 		handle: 0
 	}
 	conn.init() or { return err }
@@ -49,6 +49,11 @@ enum Select {
 	read
 	write
 	except
+}
+
+// close closes the ssl connection and does cleanup
+pub fn (mut s SSLConn) close() ! {
+	s.shutdown()!
 }
 
 // shutdown closes the ssl connection and does cleanup
@@ -247,6 +252,11 @@ fn (mut s SSLConn) complete_connect() ! {
 	}
 }
 
+// addr retrieves the local ip address and port number for this connection
+pub fn (s &SSLConn) addr() !net.Addr {
+	return net.addr_from_socket_handle(s.handle)
+}
+
 // peer_addr retrieves the ip address and port number used by the peer
 pub fn (s &SSLConn) peer_addr() !net.Addr {
 	return net.peer_addr_from_socket_handle(s.handle)
@@ -374,7 +384,7 @@ pub fn (mut s SSLConn) write_string(str string) !int {
 }
 
 // Select waits for an io operation (specified by parameter `test`) to be available
-fn @select(handle int, test Select, timeout time.Duration) !bool {
+fn select(handle int, test Select, timeout time.Duration) !bool {
 	$if trace_ssl ? {
 		eprintln('${@METHOD} handle: ${handle}, timeout: ${timeout}')
 	}
@@ -389,7 +399,7 @@ fn @select(handle int, test Select, timeout time.Duration) !bool {
 		microseconds := (remaining_time % 1000) * 1000
 
 		tt := C.timeval{
-			tv_sec: u64(seconds)
+			tv_sec:  u64(seconds)
 			tv_usec: u64(microseconds)
 		}
 		timeval_timeout := if timeout < 0 {
@@ -401,13 +411,13 @@ fn @select(handle int, test Select, timeout time.Duration) !bool {
 		mut res := -1
 		match test {
 			.read {
-				res = net.socket_error(C.@select(handle + 1, &set, C.NULL, C.NULL, timeval_timeout))!
+				res = net.socket_error(C.select(handle + 1, &set, C.NULL, C.NULL, timeval_timeout))!
 			}
 			.write {
-				res = net.socket_error(C.@select(handle + 1, C.NULL, &set, C.NULL, timeval_timeout))!
+				res = net.socket_error(C.select(handle + 1, C.NULL, &set, C.NULL, timeval_timeout))!
 			}
 			.except {
-				res = net.socket_error(C.@select(handle + 1, C.NULL, C.NULL, &set, timeval_timeout))!
+				res = net.socket_error(C.select(handle + 1, C.NULL, C.NULL, &set, timeval_timeout))!
 			}
 		}
 		if res < 0 {
@@ -433,7 +443,7 @@ fn @select(handle int, test Select, timeout time.Duration) !bool {
 
 // wait_for wraps the common wait code
 fn wait_for(handle int, what Select, timeout time.Duration) ! {
-	ready := @select(handle, what, timeout)!
+	ready := select(handle, what, timeout)!
 	if ready {
 		return
 	}

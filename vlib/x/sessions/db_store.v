@@ -8,7 +8,7 @@ import time
 // a session data record
 pub struct DBStoreSessions {
 pub mut:
-	session_id string    @[primary]
+	session_id string @[primary]
 	created_at time.Time
 	data       string
 }
@@ -91,7 +91,7 @@ pub fn (mut store DBStore[T]) set(sid string, val T) ! {
 		record := DBStoreSessions{
 			session_id: sid
 			created_at: time.now()
-			data: json.encode(val)
+			data:       json.encode(val)
 		}
 
 		sql store.db {

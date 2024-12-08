@@ -4,11 +4,11 @@
 module debug
 
 import os
-import math
 import readline
 import strings
 import term
 
+@[markused]
 __global g_debugger = Debugger{}
 
 // Debugger holds the V debug information for REPL
@@ -52,14 +52,14 @@ pub struct DebugContextVar {
 
 // DebugContextInfo has the context info for the debugger repl
 pub struct DebugContextInfo {
-	is_anon           bool   // cur fn is anon?
-	is_generic        bool   // cur fn is a generic?
-	is_method         bool   // cur fn is a bool?
-	receiver_typ_name string // cur receiver type name (method only)
-	line              int    // cur line number
-	file              string // cur file name
-	mod               string // cur module name
-	fn_name           string // cur function name
+	is_anon           bool                       // cur fn is anon?
+	is_generic        bool                       // cur fn is a generic?
+	is_method         bool                       // cur fn is a bool?
+	receiver_typ_name string                     // cur receiver type name (method only)
+	line              int                        // cur line number
+	file              string                     // cur file name
+	mod               string                     // cur module name
+	fn_name           string                     // cur function name
 	scope             map[string]DebugContextVar // scope var data
 }
 
@@ -156,8 +156,8 @@ fn (mut d Debugger) parse_input(input string, is_ctrl bool) (string, string) {
 fn (mut d Debugger) print_context_lines(path string, line int, lines int) ! {
 	file_content := os.read_file(path)!
 	chunks := file_content.split('\n')
-	offset := math.max(line - lines, 1)
-	for n, s in chunks[offset - 1..math.min(chunks.len, line + lines)] {
+	offset := int_max(line - lines, 1)
+	for n, s in chunks[offset - 1..int_min(chunks.len, line + lines)] {
 		ind := if n + offset == line { '>' } else { ' ' }
 		flush_println('${n + offset:04}${ind} ${s}')
 	}

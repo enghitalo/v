@@ -8,18 +8,18 @@ const points = [f32(200.0), 200.0, 200.0, 100.0, 400.0, 100.0, 400.0, 300.0]
 struct App {
 mut:
 	gg    &gg.Context = unsafe { nil }
-	steps int = 30
+	steps int         = 30
 }
 
 fn main() {
 	mut app := &App{}
 	app.gg = gg.new_context(
-		bg_color: gx.rgb(174, 198, 255)
-		width: 600
-		height: 400
+		bg_color:     gx.rgb(174, 198, 255)
+		width:        600
+		height:       400
 		window_title: 'Cubic Bézier curve'
-		frame_fn: frame
-		user_data: app
+		frame_fn:     frame
+		user_data:    app
 	)
 	app.gg.run()
 }

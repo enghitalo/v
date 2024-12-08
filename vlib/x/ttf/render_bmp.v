@@ -21,26 +21,26 @@ pub mut:
 	tf       &TTF_File = unsafe { nil }
 	buf      &u8       = unsafe { nil } // pointer to the memory buffer
 	buf_size int // allocated buf size in bytes
-	width    int = 1 // width of the buffer
-	height   int = 1 // height of the buffer
-	bp       int = 4 // byte per pixel of the buffer
+	width    int = 1           // width of the buffer
+	height   int = 1           // height of the buffer
+	bp       int = 4           // byte per pixel of the buffer
 	bg_color u32 = 0xFFFFFF_00 // background RGBA format
 	color    u32 = 0x000000_FF // RGBA format
-	scale    f32 = 1.0 // internal usage!!
-	scale_x  f32 = 1.0 // X scale of the single glyph
-	scale_y  f32 = 1.0 // Y scale of the single glyph
-	angle    f32 = 0.0 // angle of rotation of the bitmap
+	scale    f32 = 1.0         // internal usage!!
+	scale_x  f32 = 1.0         // X scale of the single glyph
+	scale_y  f32 = 1.0         // Y scale of the single glyph
+	angle    f32 = 0.0         // angle of rotation of the bitmap
 	// spaces
-	space_cw   f32 = 1.0 // width of the space glyph internal usage!!
+	space_cw   f32 = 1.0      // width of the space glyph internal usage!!
 	space_mult f32 = f32(0.0) // 1.0/16.0  // space between letter, is a multiplier for a standard space ax
 	// used only by internal text rendering!!
 	tr_matrix          []f32      = [f32(1), 0, 0, 0, 1, 0, 0, 0, 0] // transformation matrix
 	ch_matrix          []f32      = [f32(1), 0, 0, 0, 1, 0, 0, 0, 0] // character matrix
 	style              Style      = .filled // default style
-	align              Text_align = .left // default text align
+	align              Text_align = .left   // default text align
 	justify            bool // justify text flag, default deactivated
 	justify_fill_ratio f32 = 0.5 // justify fill ratio, if the ratio of the filled row is >= of this then justify the text
-	filler             [][]int    // filler buffer for the renderer
+	filler             [][]int // filler buffer for the renderer
 	// flag to force font embedded metrics
 	use_font_metrics bool
 }
@@ -483,7 +483,7 @@ pub fn (mut bmp BitMap) get_chars_bbox(in_string string) []int {
 		// manage unicode chars like latin greek etc
 		c_len := ((0xe5000000 >> ((chr >> 3) & 0x1e)) & 3) + 1
 		if c_len > 1 {
-			tmp_char := utf8.get_uchar(in_string, i)
+			tmp_char := utf8.get_rune(in_string, i)
 			// dprintln("tmp_char: ${tmp_char.hex()}")
 			chr = u16(tmp_char)
 		}
@@ -554,7 +554,7 @@ pub fn (mut bmp BitMap) get_bbox(in_string string) (int, int) {
 		// manage unicode chars like latin greek etc
 		c_len := ((0xe5000000 >> ((chr >> 3) & 0x1e)) & 3) + 1
 		if c_len > 1 {
-			tmp_char := utf8.get_uchar(in_string, i)
+			tmp_char := utf8.get_rune(in_string, i)
 			// dprintln("tmp_char: ${tmp_char.hex()}")
 			chr = u16(tmp_char)
 		}
@@ -649,7 +649,7 @@ pub fn (mut bmp BitMap) draw_text(in_string string) (int, int) {
 		// manage unicode chars like latin greek etc
 		c_len := ((0xe5000000 >> ((chr >> 3) & 0x1e)) & 3) + 1
 		if c_len > 1 {
-			tmp_char := utf8.get_uchar(in_string, i)
+			tmp_char := utf8.get_rune(in_string, i)
 			// dprintln("tmp_char: ${tmp_char.hex()}")
 			chr = u16(tmp_char)
 		}

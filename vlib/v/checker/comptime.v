@@ -88,7 +88,7 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 			c.error('not supported compression type: .${node.embed_file.compression_type}. supported: ${supported}',
 				node.pos)
 		}
-		return c.table.find_type_idx('v.embed_file.EmbedFileData')
+		return c.table.find_type('v.embed_file.EmbedFileData')
 	}
 	if node.is_vweb {
 		// TODO: assoc parser bug
@@ -100,7 +100,7 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 		}
 		mut c2 := new_checker(c.table, pref2)
 		c2.comptime_call_pos = node.pos.pos
-		c2.check(mut node.vweb_tmpl)
+		c2.check(mut node.veb_tmpl)
 		c.warnings << c2.warnings
 		c.errors << c2.errors
 		c.notices << c2.notices
@@ -111,7 +111,17 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 		c.table.cur_fn = save_cur_fn
 	}
 	if node.method_name == 'html' {
-		rtyp := c.table.find_type_idx('vweb.Result')
+		ret_sym := c.table.sym(c.table.cur_fn.return_type)
+		if ret_sym.cname !in ['veb__Result', 'vweb__Result', 'x__vweb__Result'] {
+			ct_call := if node.is_veb { 'veb' } else { 'vweb' }
+			c.error('`\$${ct_call}.html()` must be called inside a web method, e.g. `fn (mut app App) foo(mut ctx Context) ${ct_call}.Result { return \$${ct_call}.html(\'index.html\') }`',
+				node.pos)
+		}
+		rtyp := if node.is_veb {
+			c.table.find_type('veb.Result')
+		} else {
+			c.table.find_type('vweb.Result')
+		}
 		node.result_type = rtyp
 		return rtyp
 	}
@@ -123,8 +133,34 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 			// check each arg expression
 			node.args[i].typ = c.expr(mut arg.expr)
 		}
+		if c.pref.skip_unused {
+			c.table.used_features.comptime_calls['${int(c.unwrap_generic(c.comptime.comptime_for_method.receiver_type))}.${c.comptime.comptime_for_method.name}'] = true
+			if c.inside_anon_fn {
+				// $method passed to anon fn, mark all methods as used
+				sym := c.table.sym(c.unwrap_generic(node.left_type))
+				for m in sym.get_methods() {
+					c.table.used_features.comptime_calls['${int(c.unwrap_generic(m.receiver_type))}.${m.name}'] = true
+					if node.args.len > 0 && m.params.len > 0 {
+						last_param := m.params.last().typ
+						if (last_param.is_int() || last_param.is_bool())
+							&& c.table.final_sym(node.args.last().typ).kind == .array {
+							c.table.used_features.comptime_calls['${ast.string_type_idx}.${c.table.type_to_str(m.params.last().typ)}'] = true
+						}
+					}
+				}
+			} else {
+				m := c.comptime.comptime_for_method
+				if node.args.len > 0 && m.params.len > 0 {
+					last_param := m.params.last().typ
+					if (last_param.is_int() || last_param.is_bool())
+						&& c.table.final_sym(node.args.last().typ).kind == .array {
+						c.table.used_features.comptime_calls['${ast.string_type_idx}.${c.table.type_to_str(m.params.last().typ)}'] = true
+					}
+				}
+			}
+		}
 		c.stmts_ending_with_expression(mut node.or_block.stmts, c.expected_or_type)
-		return c.comptime.get_comptime_var_type(node)
+		return c.comptime.get_type(node)
 	}
 	if node.method_name == 'res' {
 		if !c.inside_defer {
@@ -181,10 +217,14 @@ fn (mut c Checker) comptime_call(mut node ast.ComptimeCall) ast.Type {
 	} else {
 		c.error('todo: not a string literal', node.method_pos)
 	}
-	left_sym := c.table.sym(c.unwrap_generic(node.left_type))
+	left_type := c.unwrap_generic(node.left_type)
+	left_sym := c.table.sym(left_type)
 	f := left_sym.find_method(method_name) or {
 		c.error('could not find method `${method_name}`', node.method_pos)
 		return ast.void_type
+	}
+	if c.pref.skip_unused {
+		c.table.used_features.comptime_calls['${int(left_type)}.${method_name}'] = true
 	}
 	node.result_type = f.return_type
 	return f.return_type
@@ -236,7 +276,7 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 		return
 	}
 	if node.kind == .fields {
-		if sym.kind in [.struct_, .interface_] {
+		if sym.kind in [.struct, .interface] {
 			mut fields := []ast.StructField{}
 			match sym.info {
 				ast.Struct {
@@ -255,7 +295,7 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 				c.push_new_comptime_info()
 				c.comptime.inside_comptime_for = true
 				if c.field_data_type == 0 {
-					c.field_data_type = ast.Type(c.table.find_type_idx('FieldData'))
+					c.field_data_type = c.table.find_type('FieldData')
 				}
 				c.comptime.comptime_for_field_value = field
 				c.comptime.comptime_for_field_var = node.val_var
@@ -267,6 +307,19 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 				unwrapped_expr_type := c.unwrap_generic(field.typ)
 				tsym := c.table.sym(unwrapped_expr_type)
 				c.table.dumps[int(unwrapped_expr_type.clear_flags(.option, .result, .atomic_f))] = tsym.cname
+				if c.pref.skip_unused {
+					c.table.used_features.dump = true
+					if c.table.used_features.used_maps == 0 {
+						final_sym := c.table.final_sym(unwrapped_expr_type)
+						if final_sym.info is ast.Map {
+							c.table.used_features.used_maps++
+						} else if final_sym.info is ast.SumType {
+							if final_sym.info.variants.any(c.table.final_sym(it).kind == .map) {
+								c.table.used_features.used_maps++
+							}
+						}
+					}
+				}
 				if tsym.kind == .array_fixed {
 					info := tsym.info as ast.ArrayFixed
 					if !info.is_fn_ret {
@@ -284,40 +337,50 @@ fn (mut c Checker) comptime_for(mut node ast.ComptimeFor) {
 			return
 		}
 	} else if node.kind == .values {
-		if sym.kind == .enum_ {
+		if sym.kind == .enum {
 			c.push_new_comptime_info()
 			c.comptime.inside_comptime_for = true
 			if c.enum_data_type == 0 {
-				c.enum_data_type = ast.Type(c.table.find_type_idx('EnumData'))
+				c.enum_data_type = c.table.find_type('EnumData')
 			}
 			c.comptime.comptime_for_enum_var = node.val_var
 			c.comptime.type_map[node.val_var] = c.enum_data_type
 			c.comptime.type_map['${node.val_var}.typ'] = node.typ
 			c.stmts(mut node.stmts)
 			c.pop_comptime_info()
+			c.table.used_features.comptime_for = true
 		} else {
 			c.error('iterating over .values is supported only for enums, and ${sym.name} is not an enum',
 				node.typ_pos)
 			return
 		}
 	} else if node.kind == .methods {
-		mut methods := sym.methods.filter(it.attrs.len == 0) // methods without attrs first
-		methods_with_attrs := sym.methods.filter(it.attrs.len > 0) // methods with attrs second
-		methods << methods_with_attrs
-
+		methods := sym.get_methods()
 		for method in methods {
 			c.push_new_comptime_info()
 			c.comptime.inside_comptime_for = true
-			c.comptime.comptime_for_method = method.name
+			c.comptime.comptime_for_method = unsafe { &method }
 			c.comptime.comptime_for_method_var = node.val_var
 			c.comptime.comptime_for_method_ret_type = method.return_type
 			c.comptime.type_map['${node.val_var}.return_type'] = method.return_type
 			c.stmts(mut node.stmts)
 			c.pop_comptime_info()
 		}
+		c.table.used_features.comptime_for = true
+	} else if node.kind == .params {
+		if !(sym.kind == .function || sym.name == 'FunctionData') {
+			c.error('iterating over `.params` is supported only for functions, and `${sym.name}` is not a function',
+				node.typ_pos)
+			return
+		}
+		c.push_new_comptime_info()
+		c.comptime.inside_comptime_for = true
+		c.comptime.comptime_for_method_param_var = node.val_var
+		c.stmts(mut node.stmts)
+		c.pop_comptime_info()
 	} else if node.kind == .variants {
 		if c.variant_data_type == 0 {
-			c.variant_data_type = ast.Type(c.table.find_type_idx('VariantData'))
+			c.variant_data_type = c.table.find_type('VariantData')
 		}
 		mut variants := []ast.Type{}
 		if c.comptime.comptime_for_field_var != '' && typ == c.field_data_type {
@@ -576,7 +639,7 @@ fn (mut c Checker) eval_comptime_const_expr(expr ast.Expr, nlevel int) ?ast.Comp
 	return none
 }
 
-fn (mut c Checker) verify_vweb_params_for_method(node ast.Fn) (bool, int, int) {
+fn (mut c Checker) verify_vweb_params_for_method(node &ast.Fn) (bool, int, int) {
 	margs := node.params.len - 1 // first arg is the receiver/this
 	// if node.attrs.len == 0 || (node.attrs.len == 1 && node.attrs[0].name == 'post') {
 	if node.attrs.len == 0 {
@@ -606,8 +669,8 @@ fn (mut c Checker) verify_all_vweb_routes() {
 	if c.vweb_gen_types.len == 0 {
 		return
 	}
-	c.table.used_vweb_types = c.vweb_gen_types
-	typ_vweb_result := c.table.find_type_idx('vweb.Result')
+	c.table.used_features.used_veb_types = c.vweb_gen_types
+	typ_vweb_result := c.table.find_type('vweb.Result')
 	old_file := c.file
 	for vgt in c.vweb_gen_types {
 		sym_app := c.table.sym(vgt)
@@ -649,7 +712,7 @@ fn (mut c Checker) evaluate_once_comptime_if_attribute(mut node ast.Attr) bool {
 			return node.ct_skip
 		} else {
 			if node.ct_expr.name !in ast.valid_comptime_not_user_defined {
-				c.note('`[if ${node.ct_expr.name}]` is deprecated. Use `[if ${node.ct_expr.name} ?]` instead',
+				c.note('`[if ${node.ct_expr.name}]` is deprecated. Use `@[if ${node.ct_expr.name} ?]` instead',
 					node.pos)
 				node.ct_skip = node.ct_expr.name !in c.pref.compile_defines
 				node.ct_evaled = true
@@ -724,7 +787,15 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 				should_record_ident = true
 				is_user_ident = true
 				ident_name = cond.expr.name
-				return if cond.expr.name in c.pref.compile_defines_all { .eval } else { .skip }
+				return if cond.expr.name in c.pref.compile_defines {
+					.eval
+				} else {
+					if cond.expr.name in c.pref.compile_defines_all {
+						ComptimeBranchSkipState.unknown
+					} else {
+						ComptimeBranchSkipState.skip
+					}
+				}
 			} else {
 				c.error('invalid `\$if` condition', cond.pos)
 			}
@@ -751,8 +822,11 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 					if cond.left is ast.TypeNode && mut cond.right is ast.TypeNode {
 						// `$if Foo is Interface {`
 						sym := c.table.sym(cond.right.typ)
-						if sym.kind != .interface_ {
+						if sym.kind != .interface {
 							c.expr(mut cond.left)
+						} else {
+							return c.check_compatible_types((cond.left as ast.TypeNode).typ,
+								cond.right)
 						}
 						return .unknown
 					} else if cond.left is ast.TypeNode && mut cond.right is ast.ComptimeType {
@@ -764,16 +838,28 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 							.skip
 						}
 					} else if cond.left in [ast.Ident, ast.SelectorExpr, ast.TypeNode] {
-						// `$if method.@type is string`
+						// `$if method.type is string`
 						c.expr(mut cond.left)
-						if cond.left is ast.SelectorExpr
-							&& c.comptime.is_comptime_selector_type(cond.left)
-							&& mut cond.right is ast.ComptimeType {
-							checked_type := c.comptime.get_comptime_var_type(cond.left)
-							return if c.comptime.is_comptime_type(checked_type, cond.right) {
-								.eval
-							} else {
-								.skip
+						if mut cond.left is ast.SelectorExpr && cond.right is ast.ComptimeType {
+							comptime_type := cond.right as ast.ComptimeType
+							if c.comptime.is_comptime_selector_type(cond.left) {
+								checked_type := c.comptime.get_type(cond.left)
+								return if c.comptime.is_comptime_type(checked_type, comptime_type) {
+									.eval
+								} else {
+									.skip
+								}
+							} else if cond.left.gkind_field == .unaliased_typ
+								&& cond.left.name_type != 0 {
+								// T.unaliased_typ
+								checked_type := c.unwrap_generic(cond.left.name_type)
+								return if c.comptime.is_comptime_type(c.table.unaliased_type(checked_type),
+									comptime_type)
+								{
+									.eval
+								} else {
+									.skip
+								}
 							}
 						}
 						return .unknown
@@ -862,12 +948,18 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 			is_user_ident = false
 			ident_name = cname
 			if cname in ast.valid_comptime_if_os {
-				mut is_os_target_equal := true
+				mut ident_result := ComptimeBranchSkipState.skip
 				if !c.pref.output_cross_c {
-					target_os := c.pref.os.str().to_lower()
-					is_os_target_equal = cname == target_os
+					if cname_enum_val := pref.os_from_string(cname) {
+						if cname_enum_val == c.pref.os {
+							ident_result = .eval
+						}
+					}
 				}
-				return if is_os_target_equal { .eval } else { .skip }
+				$if trace_comptime_os_checks ? {
+					eprintln('>>> ident_name: ${ident_name} | c.pref.os: ${c.pref.os} | ident_result: ${ident_result}')
+				}
+				return ident_result
 			} else if cname in ast.valid_comptime_if_compilers {
 				return if pref.cc_from_string(cname) == c.pref.ccompiler_type {
 					.eval
@@ -1010,17 +1102,17 @@ fn (mut c Checker) comptime_if_cond(mut cond ast.Expr, pos token.Pos) ComptimeBr
 // push_new_comptime_info saves the current comptime information
 fn (mut c Checker) push_new_comptime_info() {
 	c.comptime_info_stack << comptime.ComptimeInfo{
-		resolver: c.comptime.resolver
-		table: c.comptime.table
-		type_map: c.comptime.type_map.clone()
-		inside_comptime_for: c.comptime.inside_comptime_for
-		comptime_for_variant_var: c.comptime.comptime_for_variant_var
-		comptime_for_field_var: c.comptime.comptime_for_field_var
-		comptime_for_field_type: c.comptime.comptime_for_field_type
-		comptime_for_field_value: c.comptime.comptime_for_field_value
-		comptime_for_enum_var: c.comptime.comptime_for_enum_var
-		comptime_for_method_var: c.comptime.comptime_for_method_var
-		comptime_for_method: c.comptime.comptime_for_method
+		resolver:                     c.comptime.resolver
+		table:                        c.comptime.table
+		type_map:                     c.comptime.type_map.clone()
+		inside_comptime_for:          c.comptime.inside_comptime_for
+		comptime_for_variant_var:     c.comptime.comptime_for_variant_var
+		comptime_for_field_var:       c.comptime.comptime_for_field_var
+		comptime_for_field_type:      c.comptime.comptime_for_field_type
+		comptime_for_field_value:     c.comptime.comptime_for_field_value
+		comptime_for_enum_var:        c.comptime.comptime_for_enum_var
+		comptime_for_method_var:      c.comptime.comptime_for_method_var
+		comptime_for_method:          c.comptime.comptime_for_method
 		comptime_for_method_ret_type: c.comptime.comptime_for_method_ret_type
 	}
 }
