@@ -1,4 +1,5 @@
 import x.json2 as json
+import x.json2.decoder2
 
 enum JobTitle {
 	manager
@@ -153,11 +154,11 @@ fn test_struct_with_struct_to_map() {
 }
 
 fn test_maps() {
-	assert json.decode[map[string]string]('{"test":"abc"}')! == {
+	assert decoder2.decode[map[string]string]('{"test":"abc"}')! == {
 		'test': 'abc'
 	}
 
-	// assert json.decode[map[string]StructType[bool]]('{"test":{"val":true}}') or {
+	// assert decoder2.decode[map[string]StructType[bool]]('{"test":{"val":true}}') or {
 	// 	dump(err)
 	// 	assert false
 	// } == {"test":StructType[bool]{true}}

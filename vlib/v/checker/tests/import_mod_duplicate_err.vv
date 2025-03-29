@@ -1,6 +1,7 @@
 module json
 
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 const used = true
 

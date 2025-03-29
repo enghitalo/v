@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 type Prices = Price | []Price
 
@@ -26,7 +27,7 @@ struct Dog {
 
 fn test_main() {
 	data := '{"attributes": {"price": [{"net": 1, "_type": "Price"}, {"net": 2, "_type": "Price"}]}}'
-	entity := json.decode(ShopResponseData, data) or { panic(err) }
+	entity := decoder2.decode[ShopResponseData](data) or { panic(err) }
 	assert entity == ShopResponseData{
 		attributes: Attributes{
 			price: Prices([Price{
@@ -38,7 +39,7 @@ fn test_main() {
 	}
 
 	data2 := '{"attributes": {"price": {"net": 1, "_type": "Price"}}}'
-	entity2 := json.decode(ShopResponseData, data2) or { panic(err) }
+	entity2 := decoder2.decode[ShopResponseData](data2) or { panic(err) }
 	assert entity2 == ShopResponseData{
 		attributes: Attributes{
 			price: Prices(Price{
@@ -56,7 +57,7 @@ fn test_main() {
 	})
 	assert data3 == '{"attributes":{"price":[{"net":1.2,"_type":"Price"}]}}'
 
-	entity3 := json.decode(ShopResponseData, data3) or { panic(err) }
+	entity3 := decoder2.decode[ShopResponseData](data3) or { panic(err) }
 	assert entity3 == ShopResponseData{
 		attributes: Attributes{
 			price: Prices([Price{
@@ -73,7 +74,7 @@ fn test_sum_types() {
 	assert data1 == '{"dog_name":"Caramelo","_type":"Dog"}'
 
 	s := '{"_type":"Cat","cat_name":"Whiskers"}'
-	animal := json.decode(Animal, s) or {
+	animal := decoder2.decode[Animal](s) or {
 		println(err)
 		assert false
 		return
@@ -88,7 +89,7 @@ fn test_sum_types() {
 
 	s2 := '[{"_type":"Cat","cat_name":"Whiskers"}, {"_type":"Dog","dog_name":"Goofie"}]'
 
-	animals := json.decode([]Animal, s2) or {
+	animals := decoder2.decode[[]Animal](s2) or {
 		println(err)
 		assert false
 		return

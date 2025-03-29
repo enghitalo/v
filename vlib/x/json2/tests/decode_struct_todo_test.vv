@@ -1,44 +1,45 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 fn test_option_types() {
-	assert json.decode[StructTypeOption[string]]('{}')!.val == none
-	assert json.decode[StructTypeOption[string]]('{"val": ""}')!.val == ''
-	assert json.decode[StructTypeOption[string]]('{"val": "0"}')!.val == '0'
-	assert json.decode[StructTypeOption[string]]('{"val": "1"}')!.val == '1'
-	assert json.decode[StructTypeOption[string]]('{"val": "2"}')!.val == '2'
-	assert json.decode[StructTypeOption[string]]('{"val": 0}')!.val == '0'
-	assert json.decode[StructTypeOption[string]]('{"val": 1}')!.val == '1'
-	assert json.decode[StructTypeOption[string]]('{"val": 2}')!.val == '2'
-	assert json.decode[StructTypeOption[string]]('{"val": "true"}')!.val == 'true'
-	assert json.decode[StructTypeOption[string]]('{"val": "false"}')!.val == 'false'
-	assert json.decode[StructTypeOption[string]]('{"val": true}')!.val == 'true'
-	assert json.decode[StructTypeOption[string]]('{"val": false}')!.val == 'false'
+	assert decoder2.decode[StructTypeOption[string]]('{}')!.val == none
+	assert decoder2.decode[StructTypeOption[string]]('{"val": ""}')!.val == ''
+	assert decoder2.decode[StructTypeOption[string]]('{"val": "0"}')!.val == '0'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": "1"}')!.val == '1'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": "2"}')!.val == '2'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": 0}')!.val == '0'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": 1}')!.val == '1'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": 2}')!.val == '2'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": "true"}')!.val == 'true'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": "false"}')!.val == 'false'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": true}')!.val == 'true'
+	assert decoder2.decode[StructTypeOption[string]]('{"val": false}')!.val == 'false'
 
-	assert json.decode[StructTypeOption[bool]]('{}')!.val == none
-	assert json.decode[StructTypeOption[bool]]('{"val": ""}')!.val == false
-	assert json.decode[StructTypeOption[bool]]('{"val": "0"}')!.val == false
-	assert json.decode[StructTypeOption[bool]]('{"val": "1"}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": "2"}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": 0}')!.val == false
-	assert json.decode[StructTypeOption[bool]]('{"val": 1}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": 2}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": "true"}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": "false"}')!.val == false
-	assert json.decode[StructTypeOption[bool]]('{"val": true}')!.val == true
-	assert json.decode[StructTypeOption[bool]]('{"val": false}')!.val == false
+	assert decoder2.decode[StructTypeOption[bool]]('{}')!.val == none
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": ""}')!.val == false
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": "0"}')!.val == false
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": "1"}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": "2"}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": 0}')!.val == false
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": 1}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": 2}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": "true"}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": "false"}')!.val == false
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": true}')!.val == true
+	assert decoder2.decode[StructTypeOption[bool]]('{"val": false}')!.val == false
 
-	assert json.decode[StructTypeOption[int]]('{}')!.val == none
-	assert json.decode[StructTypeOption[int]]('{"val": ""}')!.val == 0
-	assert json.decode[StructTypeOption[int]]('{"val": "0"}')!.val == 0
-	assert json.decode[StructTypeOption[int]]('{"val": "1"}')!.val == 1
-	assert json.decode[StructTypeOption[int]]('{"val": "2"}')!.val == 2
-	assert json.decode[StructTypeOption[int]]('{"val": 0}')!.val == 0
-	assert json.decode[StructTypeOption[int]]('{"val": 1}')!.val == 1
-	assert json.decode[StructTypeOption[int]]('{"val": 2}')!.val == 2
-	assert json.decode[StructTypeOption[int]]('{"val": "true"}')!.val == 1
-	assert json.decode[StructTypeOption[int]]('{"val": "false"}')!.val == 0
-	assert json.decode[StructTypeOption[int]]('{"val": true}')!.val == 1
-	assert json.decode[StructTypeOption[int]]('{"val": false}')!.val == 0
+	assert decoder2.decode[StructTypeOption[int]]('{}')!.val == none
+	assert decoder2.decode[StructTypeOption[int]]('{"val": ""}')!.val == 0
+	assert decoder2.decode[StructTypeOption[int]]('{"val": "0"}')!.val == 0
+	assert decoder2.decode[StructTypeOption[int]]('{"val": "1"}')!.val == 1
+	assert decoder2.decode[StructTypeOption[int]]('{"val": "2"}')!.val == 2
+	assert decoder2.decode[StructTypeOption[int]]('{"val": 0}')!.val == 0
+	assert decoder2.decode[StructTypeOption[int]]('{"val": 1}')!.val == 1
+	assert decoder2.decode[StructTypeOption[int]]('{"val": 2}')!.val == 2
+	assert decoder2.decode[StructTypeOption[int]]('{"val": "true"}')!.val == 1
+	assert decoder2.decode[StructTypeOption[int]]('{"val": "false"}')!.val == 0
+	assert decoder2.decode[StructTypeOption[int]]('{"val": true}')!.val == 1
+	assert decoder2.decode[StructTypeOption[int]]('{"val": false}')!.val == 0
 }
 
 fn test_array() {

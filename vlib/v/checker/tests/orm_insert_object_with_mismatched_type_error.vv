@@ -1,5 +1,6 @@
 import db.sqlite
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Tiddler {
 	id      int
@@ -12,7 +13,7 @@ struct Tiddlers {
 }
 
 fn main() {
-	tiddler := json.decode(Tiddler, '{}') or { Tiddler{} }
+	tiddler := decoder2.decode[Tiddler]('{}') or { Tiddler{} }
 	db := sqlite.connect(':memory:') or { panic(err) }
 	sql db {
 		create table Tiddlers

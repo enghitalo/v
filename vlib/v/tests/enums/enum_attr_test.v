@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 enum Foo {
 	yay  @[json: 'A'; yay]
@@ -32,6 +33,6 @@ fn test_json_encode() {
 }
 
 fn test_json_decode() {
-	dump(json.decode(FooStruct, '{"item": "A"}')!)
-	dump(json.decode(FooStruct, '{"item": "B"}')!)
+	dump(decoder2.decode[FooStruct]('{"item": "A"}')!)
+	dump(decoder2.decode[FooStruct]('{"item": "B"}')!)
 }

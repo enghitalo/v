@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct SomeStruct {
 pub mut:
@@ -18,6 +19,6 @@ fn test_main() {
 	}
 	encoded_string := json.encode(a)
 	assert encoded_string == '{"result":{},"id":"some id"}'
-	test := json.decode(MyStruct, encoded_string)!
+	test := decoder2.decode[MyStruct](encoded_string)!
 	assert test == a
 }

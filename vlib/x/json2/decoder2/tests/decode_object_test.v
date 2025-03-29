@@ -28,30 +28,30 @@ mut:
 
 fn test_array_of_strings() {
 	// Structs
-	assert json.decode[StructType[string]]('{"val": "2"}')! == StructType{
+	assert decoder2.decode[StructType[string]]('{"val": "2"}')! == StructType{
 		val: '2'
 	}
-	assert json.decode[StructType[int]]('{"val": 2}')! == StructType{
+	assert decoder2.decode[StructType[int]]('{"val": 2}')! == StructType{
 		val: 2
 	}
 
 	// maps
-	assert json.decode[map[string]string]('{"val": "2"}')! == {
+	assert decoder2.decode[map[string]string]('{"val": "2"}')! == {
 		'val': '2'
 	}
-	assert json.decode[map[string]int]('{"val": 2}')! == {
+	assert decoder2.decode[map[string]int]('{"val": 2}')! == {
 		'val': 2
 	}
 
 	// nested map
-	assert json.decode[map[string]map[string]string]('{"val": {"val2": "2"}}')! == {
+	assert decoder2.decode[map[string]map[string]string]('{"val": {"val2": "2"}}')! == {
 		'val': {
 			'val2': '2'
 		}
 	}
 
 	// nested struct
-	assert json.decode[Stru]('{"val": 1, "val2": "lala", "val3": {"a": 2, "brazilian_steak": "leleu"}}')! == Stru{
+	assert decoder2.decode[Stru]('{"val": 1, "val2": "lala", "val3": {"a": 2, "brazilian_steak": "leleu"}}')! == Stru{
 		val:  1
 		val2: 'lala'
 		val3: Stru2{
@@ -61,7 +61,7 @@ fn test_array_of_strings() {
 	}
 
 	// pretty print
-	assert json.decode[Stru]('{
+	assert decoder2.decode[Stru]('{
 		"val": 1,
 		"val2": "lala",
 		"val3": {

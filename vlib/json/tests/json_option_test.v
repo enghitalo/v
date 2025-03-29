@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct MyStruct {
 pub mut:
@@ -26,7 +27,7 @@ struct SourceFile {
 fn test_encode_decode() {
 	assert json.encode(MyStruct2{ valuea: 1 }) == '{"valuea":1}'
 
-	assert json.decode(MyStruct2, '{"valuea": 1}')! == MyStruct2{
+	assert decoder2.decode[MyStruct2]('{"valuea": 1}')! == MyStruct2{
 		valuea: 1
 		valueb: none
 	}
@@ -35,7 +36,7 @@ fn test_encode_decode() {
 fn test_encode_decode2() {
 	assert json.encode(MyStruct2{ valuea: 1, valueb: none }) == '{"valuea":1}'
 
-	assert json.decode(MyStruct2, '{"valuea": 1}')! == MyStruct2{
+	assert decoder2.decode[MyStruct2]('{"valuea": 1}')! == MyStruct2{
 		valuea: 1
 		valueb: none
 	}
@@ -49,14 +50,14 @@ fn test_encode_decode3() {
 		}
 	}) == '{"valuea":1,"valueb":{"valuea":123}}'
 
-	assert json.decode(MyStruct2, '{"valuea": 1}')! == MyStruct2{
+	assert decoder2.decode[MyStruct2]('{"valuea": 1}')! == MyStruct2{
 		valuea: 1
 		valueb: none
 	}
 }
 
 fn test_main() {
-	node := json.decode(Node, '{"loc": { "includedFrom": { "file": "/bin/foo" } } }')!
+	node := decoder2.decode[Node]('{"loc": { "includedFrom": { "file": "/bin/foo" } } }')!
 
 	source_file := node.location.source_file or {
 		SourceFile{

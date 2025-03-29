@@ -1,5 +1,5 @@
 #!/usr/bin/env -S v
 
 // Comment
-import json
+import x.json2 as json
 os.join_path('', '')

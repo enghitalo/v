@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct TestOptionalRawString {
 	id   int
@@ -14,7 +15,7 @@ s
 t'
 	}
 	encoded := json.encode(test)
-	assert json.decode(TestOptionalRawString, encoded)!.data? == r'"t\ne\ns\nt"'
+	assert decoder2.decode[TestOptionalRawString](encoded)!.data? == r'"t\ne\ns\nt"'
 }
 
 fn test_raw_none() {
@@ -23,7 +24,7 @@ fn test_raw_none() {
 		data: none
 	}
 	encoded := json.encode(test)
-	r := json.decode(TestOptionalRawString, encoded)!.data
+	r := decoder2.decode[TestOptionalRawString](encoded)!.data
 	assert r == none
 }
 
@@ -33,6 +34,6 @@ fn test_raw_empty_string() {
 		data: ''
 	}
 	encoded := json.encode(test)
-	r := json.decode(TestOptionalRawString, encoded)!.data or { 'z' }
+	r := decoder2.decode[TestOptionalRawString](encoded)!.data or { 'z' }
 	assert r == '""'
 }

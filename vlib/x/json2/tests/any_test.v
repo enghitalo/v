@@ -1,4 +1,5 @@
 import x.json2 as json
+import x.json2.decoder2
 
 const sample_data = {
 	'int':  json.Any(int(1))

@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Abc {
 	my_ints [6]int
@@ -40,7 +41,7 @@ fn test_json_serialisation_of_fixed_arrays() {
 	]!}
 	s := json.encode(a)
 	dump(s)
-	b := json.decode(Fixed_Array, s)!
+	b := decoder2.decode[Fixed_Array](s)!
 	dump(b)
 	assert a == b
 }

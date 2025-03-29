@@ -1,6 +1,7 @@
 module main
 
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub enum PlatformType {
 	unknown

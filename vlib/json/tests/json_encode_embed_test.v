@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Json2 {
 	inner []f64
@@ -11,7 +12,7 @@ struct Json {
 
 fn test_main() {
 	str := '{"inner":[1,2,3,4,5],"test":1.2}'
-	data := json.decode(Json, str) or {
+	data := decoder2.decode[Json](str) or {
 		eprintln('Failed to decode json, error: ${err}')
 		return
 	}

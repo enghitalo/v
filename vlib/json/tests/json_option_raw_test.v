@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct Dto {
 pub:
@@ -16,7 +17,7 @@ fn test_main() {
         "optional": "test"
     }'
 
-	dto := json.decode(Dto, raw_json)!
+	dto := decoder2.decode[Dto](raw_json)!
 
 	println(dto)
 	assert dto.data? == '{"test":1}'
@@ -28,7 +29,7 @@ fn test_none() {
         "optional": "test"
     }'
 
-	dto := json.decode(Dto, raw_json)!
+	dto := decoder2.decode[Dto](raw_json)!
 
 	println(dto)
 	assert dto.data == none
@@ -43,7 +44,7 @@ fn test_null() {
         "optional": "test"
     }'
 
-	dto := json.decode(Dto, raw_json)!
+	dto := decoder2.decode[Dto](raw_json)!
 
 	println(dto)
 	assert dto.key2 == 'null'
@@ -54,7 +55,7 @@ fn test_not_set() {
 	raw_json := '{
     }'
 
-	dto := json.decode(Dto, raw_json)!
+	dto := decoder2.decode[Dto](raw_json)!
 
 	println(dto)
 	assert dto.data == none

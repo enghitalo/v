@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 @[json_as_number]
 pub enum MessageType {
@@ -75,7 +76,7 @@ fn test_encode_direct_enum() {
 }
 
 fn test_encode_alias_and_sumtype() {
-	assert json.decode(TestStruct, '{"test":["one","one"],"test2":"two","test3": "one", "test4": "two", "test5":4}')! == TestStruct{
+	assert decoder2.decode[TestStruct]('{"test":["one","one"],"test2":"two","test3": "one", "test4": "two", "test5":4}')! == TestStruct{
 		test:  [.one, .one]
 		test2: .two
 		test3: TestAlias(.one)
@@ -90,7 +91,7 @@ fn test_enum_attr() {
 }
 
 fn test_enum_attr_decode() {
-	assert json.decode(TestStruct2, '{"a": 1, "b":4, "c": "test"}')! == TestStruct2{
+	assert decoder2.decode[TestStruct2]('{"a": 1, "b":4, "c": "test"}')! == TestStruct2{
 		a: .error
 		b: MessageType.log
 		c: 'test'
@@ -108,18 +109,18 @@ fn test_enum_attr_encode() {
 fn test_option_enum() {
 	assert dump(json.encode(Test{none, none})) == '{}'
 	assert dump(json.encode(Test{none, MessageType.log})) == '{"a":4}'
-	t := dump(json.decode(Test, '{"a":4}')!)
+	t := dump(decoder2.decode[Test]('{"a":4}')!)
 	assert t.ab == none
 	assert t.a? == .log
 
-	t2 := dump(json.decode(Test, '{"a":null}')!)
+	t2 := dump(decoder2.decode[Test]('{"a":null}')!)
 	assert t2.a == none
 
 	assert json.encode(Test2{none}) == '{}'
 	assert dump(json.encode(Test2{MessageType2.log})) == '{"a":"log"}'
-	z := dump(json.decode(Test2, '{"a":"log"}')!)
+	z := dump(decoder2.decode[Test2]('{"a":"log"}')!)
 	assert z.a? == .log
-	a := dump(json.decode(Test2, '{"a": null}')!)
+	a := dump(decoder2.decode[Test2]('{"a": null}')!)
 	assert a.a == none
 }
 

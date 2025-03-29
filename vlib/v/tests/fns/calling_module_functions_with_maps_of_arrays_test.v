@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 fn test_calling_functions_with_map_initializations_containing_arrays() {
 	result := json.encode({

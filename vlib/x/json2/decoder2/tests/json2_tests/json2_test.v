@@ -133,11 +133,11 @@ fn test_struct_with_struct_to_map() {
 }
 
 fn test_maps() {
-	assert json.decode[map[string]string]('{"test":"abc"}')! == {
+	assert decoder2.decode[map[string]string]('{"test":"abc"}')! == {
 		'test': 'abc'
 	}
 
-	assert json.decode[map[string]StructType[bool]]('{"test":{"val":true}}')! == {
+	assert decoder2.decode[map[string]StructType[bool]]('{"test":{"val":true}}')! == {
 		'test': StructType[bool]{true}
 	}
 }

@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Empty {}
 
@@ -11,7 +12,7 @@ struct SomeStruct {
 type Alias = SomeStruct
 
 fn test_main() {
-	data := json.decode(Alias, '{"empty_field":{}}')!
+	data := decoder2.decode[Alias]('{"empty_field":{}}')!
 	assert data.str() == 'Alias(SomeStruct{
     random_field_a: Option(none)
     random_field_b: Option(none)

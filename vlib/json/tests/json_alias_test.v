@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct User {
 	name   string
@@ -14,8 +15,8 @@ const json_users = '{
 }'
 
 fn test_alias_with_map() {
-	a := json.decode(map[string]User, json_users)!
-	b := json.decode(Users, json_users)!
+	a := decoder2.decode[map[string]User](json_users)!
+	b := decoder2.decode[Users](json_users)!
 
 	assert Users(a) == b
 

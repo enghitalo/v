@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 fn main() {
 	shared data := [1, 2, 3]

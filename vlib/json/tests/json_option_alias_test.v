@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Test {
 	optional_alias  ?MyAlias  // primitive
@@ -16,7 +17,7 @@ fn test_empty() {
 	test := Test{}
 	encoded := json.encode(test)
 	assert dump(encoded) == '{}'
-	assert json.decode(Test, '{}')! == test
+	assert decoder2.decode[Test]('{}')! == test
 }
 
 fn test_value() {
@@ -25,7 +26,7 @@ fn test_value() {
 	}
 	encoded := json.encode(test)
 	assert dump(encoded) == '{"optional_alias":1}'
-	assert json.decode(Test, '{"optional_alias":1}')! == test
+	assert decoder2.decode[Test]('{"optional_alias":1}')! == test
 }
 
 fn test_value_2() {
@@ -37,5 +38,5 @@ fn test_value_2() {
 	}
 	encoded := json.encode(test)
 	assert dump(encoded) == '{"optional_alias":1,"optional_struct":{"a":1}}'
-	assert json.decode(Test, '{"optional_alias":1,"optional_struct":{"a":1}}')! == test
+	assert decoder2.decode[Test]('{"optional_alias":1,"optional_struct":{"a":1}}')! == test
 }

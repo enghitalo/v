@@ -1,4 +1,5 @@
 import x.json2 as json
+import x.json2.decoder2
 
 struct AnyStruct[T] {
 	val T
@@ -13,13 +14,13 @@ struct OptAnyStruct[T] {
 }*/
 
 fn test_values() {
-	assert json.decode[AnyStruct[json.Any]]('{"val":5}')!.val.int() == 5
-	assert json.decode[OptAnyStruct[json.Any]]('{}')!.val == none
-	assert json.decode[AnyStruct[[]json.Any]]('{"val":[5,10]}')!.val.map(it.int()) == [
+	assert decoder2.decode[AnyStruct[json.Any]]('{"val":5}')!.val.int() == 5
+	assert decoder2.decode[OptAnyStruct[json.Any]]('{}')!.val == none
+	assert decoder2.decode[AnyStruct[[]json.Any]]('{"val":[5,10]}')!.val.map(it.int()) == [
 		5,
 		10,
 	]
-	// assert json.decode[OptAnyArrStruct]('{"val":[5,null,10]}')!.val == [?json.Any(5),json.Null{},10] skipped because test still fails even though they're the same
+	// assert decoder2.decode[OptAnyArrStruct]('{"val":[5,null,10]}')!.val == [?json.Any(5),json.Null{},10] skipped because test still fails even though they're the same
 
 	assert json.encode[AnyStruct[json.Any]](AnyStruct[json.Any]{json.Any(5)}) == '{"val":5}'
 	assert json.encode[OptAnyStruct[json.Any]](OptAnyStruct[json.Any]{none}) == '{}'

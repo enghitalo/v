@@ -72,7 +72,7 @@ fn test_json_string_non_ascii() {
 
 fn test_utf8_strings_are_not_modified() {
 	original := '{"s":"Schilddrüsenerkrankungen"}'
-	deresult := json.decode[json2.Any](original)!
+	deresult := decoder2.decode[json2.Any](original)!
 	assert deresult.str() == original
 
 	assert json2.encode('ü') == '"ü"'

@@ -13,7 +13,7 @@ fn test_json_decode_with_option_arg() {
 }
 
 fn print_info() !string {
-	dbconf := json.decode[DbConfig](os.read_file('dbconf.json')!)!
+	dbconf := decoder2.decode[DbConfig](os.read_file('dbconf.json')!)!
 	println(dbconf)
 	return '${dbconf}'
 }

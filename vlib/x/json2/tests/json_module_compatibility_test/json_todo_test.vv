@@ -25,7 +25,7 @@ pub struct Price {
 //! BUGFIX
 fn test_field_with_default_expr() {
 	data := '[{"net":1},{"net":2,"currencyId":"cjson"}]'
-	prices := json.decode[[]Price](data)!
+	prices := decoder2.decode[[]Price](data)!
 	assert prices == [Price{
 		net: 1
 		currency_id: 'cconst'
@@ -38,7 +38,7 @@ fn test_field_with_default_expr() {
 //! BUGFIX - .from_json(res)
 fn test_decode_top_level_array() {
 	s := '[{"name":"Peter", "age": 29}, {"name":"Bob", "age":31}]'
-	x := json.decode[[]Employee](s) or { panic(err) }
+	x := decoder2.decode[[]Employee](s) or { panic(err) }
 	assert x.len == 2
 	assert x[0].name == 'Peter'
 	assert x[0].age == 29
@@ -71,7 +71,7 @@ struct SomeGame {
 fn test_encode_decode_sumtype() {
 	enc := '{"title":"Super Mega Game","player":{"name":"Monke","_type":"Human"},"other":[{"tag":"Pen","_type":"Item"},{"tag":"Cookie","_type":"Item"},1,"Stool",{"_type":"Time","value":${t.unix()}}]}'
 
-	dec := json.decode[SomeGame](enc)!
+	dec := decoder2.decode[SomeGame](enc)!
 
 	assert game.title == dec.title
 	assert game.player == dec.player
@@ -99,8 +99,8 @@ pub mut:
 
 fn test_parse_user() {
 	s := '{"age": 10, "nums": [1,2,3], "type": 1, "lastName": "Johnson", "IsRegistered": true, "pet_animals": {"name": "Bob", "animal": "Dog"}}'
-	u2 := json.decode[User2](s)!
-	u := json.decode[User](s)!
+	u2 := decoder2.decode[User2](s)!
+	u := decoder2.decode[User](s)!
 	assert u.age == 10
 	assert u.last_name == 'Johnson'
 	assert u.is_registered == true
@@ -120,7 +120,7 @@ fn test_encode_decode_time() {
 	}
 	s := json.encode(user)
 	assert s.contains('"reg_date":1608621780')
-	user2 := json.decode[User2](s)!
+	user2 := decoder2.decode[User2](s)!
 	assert user2.reg_date.str() == '2020-12-22 07:23:00'
 }
 
@@ -135,7 +135,7 @@ struct Country {
 
 //! BUGFIX - .from_json(res)
 fn test_struct_in_struct() {
-	country := json.decode[Country]('{ "name": "UK", "cities": [{"name":"London"}, {"name":"Manchester"}]}')!
+	country := decoder2.decode[Country]('{ "name": "UK", "cities": [{"name":"London"}, {"name":"Manchester"}]}')!
 	assert country.name == 'UK'
 	assert country.cities.len == 2
 	assert country.cities[0].name == 'London'
@@ -150,7 +150,7 @@ fn test_parse_map() {
 		'three': 3
 		'four':  4
 	}
-	out := json.decode[map[string]int]('{"one":1,"two":2,"three":3,"four":4}')!
+	out := decoder2.decode[map[string]int]('{"one":1,"two":2,"three":3,"four":4}')!
 	assert out == expected
 }
 
@@ -208,7 +208,7 @@ fn test_nested_type() {
 		}
 	}
 
-	data2 := json.decode[Data](data_expected)!
+	data2 := decoder2.decode[Data](data_expected)!
 	assert data2.countries.len == data.countries.len
 	for i in 0 .. 1 {
 		assert data2.countries[i].name == data.countries[i].name
@@ -236,7 +236,7 @@ fn test_nested_type() {
 fn test_errors() {
 	invalid_array := fn () {
 		data := '{"countries":[{"cities":[{"name":"London"},{"name":"Manchester"}],"name":"UK"},{"cities":{"name":"Donlon"},"name":"KU"}],"users":{"Foo":{"age":10,"nums":[1,2,3],"lastName":"Johnson","IsRegistered":true,"type":0,"pet_animals":"little foo"},"Boo":{"age":20,"nums":[5,3,1],"lastName":"Smith","IsRegistered":false,"type":4,"pet_animals":"little boo"}},"extra":{"2":{"n1":2,"n2":4,"n3":8,"n4":16},"3":{"n1":3,"n2":9,"n3":27,"n4":81}}}'
-		json.decode[Data](data) or {
+		decoder2.decode[Data](data) or {
 			assert err.msg().starts_with('Json element is not an array:')
 			return
 		}
@@ -244,7 +244,7 @@ fn test_errors() {
 	}
 	invalid_object := fn () {
 		data := '{"countries":[{"cities":[{"name":"London"},{"name":"Manchester"}],"name":"UK"},{"cities":[{"name":"Donlon"},{"name":"Termanches"}],"name":"KU"}],"users":[{"age":10,"nums":[1,2,3],"lastName":"Johnson","IsRegistered":true,"type":0,"pet_animals":"little foo"},{"age":20,"nums":[5,3,1],"lastName":"Smith","IsRegistered":false,"type":4,"pet_animals":"little boo"}],"extra":{"2":{"n1":2,"n2":4,"n3":8,"n4":16},"3":{"n1":3,"n2":9,"n3":27,"n4":81}}}'
-		json.decode[Data](data) or {
+		decoder2.decode[Data](data) or {
 			assert err.msg().starts_with('Json element is not an object:')
 			return
 		}
@@ -264,7 +264,7 @@ struct Message {
 
 //! BUGFIX - .from_json(res)
 fn test_decode_alias_struct() {
-	msg := json.decode[Message]('{"id": "118499178790780929"}')!
+	msg := decoder2.decode[Message]('{"id": "118499178790780929"}')!
 	// hacky way of comparing aliased strings
 	assert msg.id.str() == '118499178790780929'
 }
@@ -276,21 +276,21 @@ struct List {
 
 //! BUGFIX - .from_json(res)
 fn test_list() {
-	list := json.decode[List]('{"id": 1, "items": ["1", "2"]}')!
+	list := decoder2.decode[List]('{"id": 1, "items": ["1", "2"]}')!
 	assert list.id == 1
 	assert list.items == ['1', '2']
 }
 
 //! BUGFIX - .from_json(res)
 fn test_list_no_id() {
-	list := json.decode[List]('{"items": ["1", "2"]}')!
+	list := decoder2.decode[List]('{"items": ["1", "2"]}')!
 	assert list.id == 0
 	assert list.items == ['1', '2']
 }
 
 //! BUGFIX - .from_json(res)
 fn test_list_no_items() {
-	list := json.decode[List]('{"id": 1}')!
+	list := decoder2.decode[List]('{"id": 1}')!
 	assert list.id == 1
 	assert list.items == []
 }
@@ -303,7 +303,7 @@ struct Info {
 
 //! BUGFIX - .from_json(res)
 fn test_decode_null_object() {
-	info := json.decode[Info]('{"id": 22, "items": null, "maps": null}')!
+	info := decoder2.decode[Info]('{"id": 22, "items": null, "maps": null}')!
 	assert info.id == 22
 	assert '${info.items}' == '[]'
 	assert '${info.maps}' == '{}'
@@ -311,7 +311,7 @@ fn test_decode_null_object() {
 
 //! BUGFIX - .from_json(res)
 fn test_decode_missing_maps_field() {
-	info := json.decode[Info]('{"id": 22, "items": null}')!
+	info := decoder2.decode[Info]('{"id": 22, "items": null}')!
 	assert info.id == 22
 	assert '${info.items}' == '[]'
 	assert '${info.maps}' == '{}'

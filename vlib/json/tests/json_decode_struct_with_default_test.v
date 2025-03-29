@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct Response {
 pub:
@@ -23,7 +24,7 @@ pub:
 
 pub fn define(word string) !&Response {
 	resp := '{"list":[{"defid":3439287}]}'
-	response := json.decode(Response, resp) or { return err }
+	response := decoder2.decode[Response](resp) or { return err }
 	return &response
 }
 

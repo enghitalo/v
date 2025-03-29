@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct MyStruct[T] {
 pub mut:
@@ -14,7 +15,7 @@ fn test_gn_struct_string() ! {
 
 	encoded_string := json.encode(a)
 	dump(encoded_string)
-	test := json.decode(MyStruct[string], encoded_string)!
+	test := decoder2.decode[MyStruct[string]](encoded_string)!
 	dump(test)
 	assert a == test
 }
@@ -27,7 +28,7 @@ fn test_gn_struct_int() ! {
 
 	encoded_string := json.encode(a)
 	dump(encoded_string)
-	test := json.decode(MyStruct[int], encoded_string)!
+	test := decoder2.decode[MyStruct[int]](encoded_string)!
 	dump(test)
 	assert a == test
 }
@@ -40,7 +41,7 @@ fn test_gn_struct_f64() ! {
 
 	encoded_string := json.encode(a)
 	dump(encoded_string)
-	test := json.decode(MyStruct[f64], encoded_string)!
+	test := decoder2.decode[MyStruct[f64]](encoded_string)!
 	dump(test)
 	assert a == test
 }

@@ -1,6 +1,6 @@
 module json
 
-import json as vjson
+import x.json2 as json as vjson
 
 const used = true
 

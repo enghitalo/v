@@ -1,7 +1,7 @@
 vlib/v/checker/tests/import_mod_duplicate_as_alias_err.vv:3:8: error: cannot import `json` into a module with the same name
     1 | module json
     2 | 
-    3 | import json as vjson
+    3 | import x.json2 as json as vjson
       |        ~~~~
     4 | 
     5 | const used = true
@@ -9,4 +9,4 @@ vlib/v/checker/tests/import_mod_duplicate_as_alias_err.vv:1:1: error: project mu
     1 | module json
       | ^
     2 | 
-    3 | import json as vjson
+    3 | import x.json2 as json as vjson

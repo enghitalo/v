@@ -1,15 +1,16 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Request {
 	a int
 }
 
 fn parse(s string) !Request {
-	return json.decode(Request, s)
+	return decoder2.decode[Request](s)
 }
 
 fn parse2(s string) !Request {
-	req := json.decode(Request, s)!
+	req := decoder2.decode[Request](s)!
 	return req
 }
 

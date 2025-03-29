@@ -32,7 +32,7 @@ fn test_simple() {
 	s := json.encode[Employee](x)
 	assert s == '{"name":"Peter","age":28,"salary":95000.5,"title":2,"sub_employee":{"name":"João","age":0,"salary":0,"title":0}}'
 
-	y := json.decode[Employee](s) or {
+	y := decoder2.decode[Employee](s) or {
 		println(err)
 		assert false
 		return
@@ -75,7 +75,7 @@ pub mut:
 fn test_parse_user() {
 	s := '{"age": 10, "nums": [1,2,3], "type": 1, "lastName": "Johnson", "IsRegistered": true, "pet_animals": {"name": "Bob", "animal": "Dog"}}'
 
-	u := json.decode[User](s)!
+	u := decoder2.decode[User](s)!
 
 	assert u.age == 10
 	assert u.last_name == 'Johnson'
@@ -96,7 +96,7 @@ fn test_encode_decode_time() {
 	s := json.encode(user)
 
 	assert s.contains('"reg_date":"2020-12-22T07:23:00.000Z"')
-	user2 := json.decode[User2](s)!
+	user2 := decoder2.decode[User2](s)!
 	assert user2.reg_date.str() == '2020-12-22 07:23:00'
 }
 
@@ -128,7 +128,7 @@ pub mut:
 }
 
 fn test_raw_json_field() {
-	color := json.decode[Color]('{"space": "YCbCr", "point": {"Y": 123}}') or {
+	color := decoder2.decode[Color]('{"space": "YCbCr", "point": {"Y": 123}}') or {
 		assert false
 		Color{}
 	}
@@ -137,7 +137,7 @@ fn test_raw_json_field() {
 }
 
 fn test_bad_raw_json_field() {
-	color := json.decode[Color]('{"space": "YCbCr"}') or { return }
+	color := decoder2.decode[Color]('{"space": "YCbCr"}') or { return }
 	assert color.point == ''
 	assert color.space == 'YCbCr'
 }
@@ -188,7 +188,7 @@ struct Bar {
 }
 
 fn bar[T](payload string) !Bar { // ?T doesn't work currently
-	result := json.decode[T](payload)!
+	result := decoder2.decode[T](payload)!
 	return result
 }
 
@@ -207,7 +207,7 @@ fn test_generic_struct() {
 	foo_int := Foo[int]{'bar', 12}
 	foo_enc := json.encode(foo_int)
 	assert foo_enc == '{"name":"bar","data":12}'
-	foo_dec := json.decode[Foo[int]](foo_enc)!
+	foo_dec := decoder2.decode[Foo[int]](foo_enc)!
 	assert foo_dec.name == 'bar'
 	assert foo_dec.data == 12
 }

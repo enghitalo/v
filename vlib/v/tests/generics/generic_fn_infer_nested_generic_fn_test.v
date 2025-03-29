@@ -1,4 +1,4 @@
-import json
+import x.json2 as json
 import os
 
 fn test_generics_fn_infer_nested_generic_fn() {
@@ -17,7 +17,7 @@ fn parse_json[T](file string, mut array []T) {
 		panic('error reading file ${file}')
 		return
 	}
-	decoded_data := json.decode([]T, data) or {
+	decoded_data := decoder2.decode[[]T](data) or {
 		eprintln('Failed to parse item spawns')
 		return
 	}

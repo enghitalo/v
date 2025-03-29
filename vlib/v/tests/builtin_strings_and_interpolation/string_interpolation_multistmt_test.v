@@ -1,6 +1,7 @@
 // This file checks that string interpolations where expressions that generate
 // multiple C statements work correctly
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 fn test_array_map_interpolation() {
 	numbers := [1, 2, 3]

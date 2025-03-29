@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Bar {
 	name ?string @[json_null]
@@ -22,5 +23,5 @@ fn test_main() {
 			name: none
 		}
 	}) == '{"name":null,"age":10,"other2":{"name":null}}'
-	assert json.decode(Foo, json.encode(Foo{}))! == Foo{}
+	assert decoder2.decode[Foo](json.encode(Foo{}))! == Foo{}
 }

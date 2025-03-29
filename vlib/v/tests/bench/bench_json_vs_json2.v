@@ -1,5 +1,5 @@
 import os
-import json
+import x.json2 as json
 import x.json2
 import time
 import benchmark
@@ -74,14 +74,14 @@ fn benchmark_measure_json_vs_json2_on_complex_struct() ! {
 	}
 	b.measure('json2.decode')
 	for _ in 0 .. max_iterations {
-		p := json.decode(Person, s)!
+		p := decoder2.decode[Person](s)!
 		if p.age != 99 {
-			return error('json.decode ${p}')
+			return error('decoder2.decode ${p}')
 		}
 	}
-	b.measure('json.decode\n')
+	b.measure('decoder2.decode\n')
 
-	measure_json_encode_old_vs_new(json.decode(Person, s)!)!
+	measure_json_encode_old_vs_new(decoder2.decode[Person](s)!)!
 }
 
 fn benchmark_measure_encode_by_type() ! {
@@ -153,12 +153,12 @@ fn benchmark_measure_decode_by_type() ! {
 	}
 	b.measure('json2.decode StructType[string]')
 	for _ in 0 .. max_iterations {
-		d := json.decode(StructType[string], vs)!
+		d := decoder2.decode[StructType[string]](vs)!
 		if d.val != '' {
-			return error('json.decode ${d}')
+			return error('decoder2.decode ${d}')
 		}
 	}
-	b.measure(' json.decode StructType[string]\n')
+	b.measure(' decoder2.decode StructType[string]\n')
 
 	vb := '{"val": true}'
 	for _ in 0 .. max_iterations {
@@ -169,12 +169,12 @@ fn benchmark_measure_decode_by_type() ! {
 	}
 	b.measure('json2.decode StructType[bool]')
 	for _ in 0 .. max_iterations {
-		d := json.decode(StructType[bool], vb) or { panic('') }
+		d := decoder2.decode[StructType[bool]](vb) or { panic('') }
 		if !d.val {
-			return error('json.decode ${d}')
+			return error('decoder2.decode ${d}')
 		}
 	}
-	b.measure(' json.decode StructType[bool]\n')
+	b.measure(' decoder2.decode StructType[bool]\n')
 
 	v0 := '{"val": 0}'
 	for _ in 0 .. max_iterations {
@@ -185,12 +185,12 @@ fn benchmark_measure_decode_by_type() ! {
 	}
 	b.measure('json2.decode StructType[int]')
 	for _ in 0 .. max_iterations {
-		d := json.decode(StructType[int], v0)!
+		d := decoder2.decode[StructType[int]](v0)!
 		if d.val != 0 {
-			return error('json.decode ${d}')
+			return error('decoder2.decode ${d}')
 		}
 	}
-	b.measure(' json.decode StructType[int]\n')
+	b.measure(' decoder2.decode StructType[int]\n')
 
 	vt := '{"val": "2015-01-06 15:47:32"}'
 	for _ in 0 .. max_iterations {
@@ -201,12 +201,12 @@ fn benchmark_measure_decode_by_type() ! {
 	}
 	b.measure('json2.decode StructType[time.Time]')
 	for _ in 0 .. max_iterations {
-		d := json.decode(StructType[time.Time], vt)!
-		if d.val.year != 1970 { // note json.decode here is buggy
+		d := decoder2.decode[StructType[time.Time]](vt)!
+		if d.val.year != 1970 { // note decoder2.decode here is buggy
 			return error('json2.decode ${d}')
 		}
 	}
-	b.measure(' json.decode StructType[time.Time]\n')
+	b.measure(' decoder2.decode StructType[time.Time]\n')
 }
 
 fn measure_json_encode_old_vs_new[T](val T) ! {

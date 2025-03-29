@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Result[T] {
 	ok     bool
@@ -12,7 +13,7 @@ struct User {
 
 fn func[T]() !T {
 	text := '{"ok": true, "result":{"id":37467243, "username": "ciao"}}'
-	a := json.decode(Result[T], text)!
+	a := decoder2.decode[Result[T]](text)!
 	return a.result
 }
 

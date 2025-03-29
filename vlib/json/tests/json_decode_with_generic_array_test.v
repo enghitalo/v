@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 struct Response[T] {
 	time string
@@ -11,7 +12,7 @@ struct Car {
 }
 
 fn string_to_response[T](text string) {
-	result := json.decode([]Response[T], text) or { panic(err) }
+	result := decoder2.decode[[]Response[T]](text) or { panic(err) }
 	println(result)
 	assert result.len == 2
 	assert result[0].time == '12ms'

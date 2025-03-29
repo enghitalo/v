@@ -1,4 +1,5 @@
-import json
+import x.json2 as json
+import x.json2.decoder2
 
 pub struct NotificationMessage[T] {
 pub:
@@ -9,7 +10,7 @@ pub:
 struct Abc {}
 
 pub fn (x &Abc) notification_at[T]() !NotificationMessage[T] {
-	return json.decode(NotificationMessage[T], '{}')
+	return decoder2.decode[NotificationMessage[T]]('{}')
 }
 
 pub fn (x &Abc) generic_method[T](method_name string) !NotificationMessage[T] {

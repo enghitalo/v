@@ -1,14 +1,14 @@
 vlib/v/checker/tests/import_mod_duplicate_err.vv:3:8: error: cannot import `json` into a module with the same name
     1 | module json
     2 | 
-    3 | import json
+    3 | import x.json2 as json
       |        ~~~~
     4 | 
     5 | const used = true
 vlib/v/checker/tests/import_mod_duplicate_err.vv:3:8: error: cannot import `json` as `json` into a module with the same name
     1 | module json
     2 | 
-    3 | import json
+    3 | import x.json2 as json
       |        ~~~~
     4 | 
     5 | const used = true
@@ -16,4 +16,4 @@ vlib/v/checker/tests/import_mod_duplicate_err.vv:1:1: error: project must includ
     1 | module json
       | ^
     2 | 
-    3 | import json
+    3 | import x.json2 as json

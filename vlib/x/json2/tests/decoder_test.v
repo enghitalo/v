@@ -1,4 +1,5 @@
 import x.json2 as json
+import x.json2.decoder2
 
 fn test_raw_decode_string() {
 	str := json.raw_decode('"Hello!"')!
@@ -18,7 +19,7 @@ fn test_raw_decode_number() {
 }
 
 fn test_raw_decode_array() {
-	raw_arr := json.raw_decode('["Foo", 1]')!
+	raw_arr := json.raw_decode['["Foo"](1]')!
 	arr := raw_arr.arr()
 	assert arr[0] or { 0 }.str() == 'Foo'
 	assert arr[1] or { 0 }.int() == 1
@@ -76,7 +77,7 @@ fn test_raw_decode_map_invalid() {
 }
 
 fn test_raw_decode_array_invalid() {
-	json.raw_decode('["Foo", 1,}') or {
+	json.raw_decode['["Foo"](1,}') or {
 		assert err.msg() == '[x.json2] invalid token `rcbr` (0:5)'
 		return
 	}
@@ -92,7 +93,7 @@ struct Foo {
 
 fn test_decode_array_fields() {
 	input := '{"int":[0, 1], "str":["2", "3"], "f32": [4.0, 5.0], "oint": [6, null]}'
-	foo := json.decode[Foo](input)!
+	foo := decoder2.decode[Foo](input)!
 	assert foo.int == [0, 1]
 	assert foo.str == ['2', '3']
 	assert foo.f32 == [f32(4.0), 5.0]
@@ -121,7 +122,7 @@ fn test_decode_missing_comma() {
 					"telnr": "+32333"
 				}
 			}'
-	user := json.decode[User](data) or {
+	user := decoder2.decode[User](data) or {
 		assert err.msg().contains('invalid token')
 		return
 	}
