@@ -38,6 +38,13 @@ pub enum ConnectionFlag {
 	client_remember_options               // (1 << 31) Don't reset the options after an unsuccessful connect
 }
 
+pub enum MySQLTransactionLevel {
+	read_uncommitted
+	read_committed
+	repeatable_read
+	serializable
+}
+
 struct SQLError {
 	MessageError
 }
@@ -108,7 +115,7 @@ pub fn connect(config Config) !DB {
 // It cannot be used for statements that contain binary data;
 // Use `real_query()` instead.
 pub fn (db &DB) query(q string) !Result {
-	if C.mysql_query(db.conn, q.str) != 0 {
+	if C.mysql_query(db.conn, charptr(q.str)) != 0 {
 		db.throw_mysql_error()!
 	}
 
@@ -188,10 +195,75 @@ pub fn (mut db DB) autocommit(mode bool) ! {
 }
 
 // commit commits the current transaction.
-pub fn (db &DB) commit() ! {
+pub fn (mut db DB) commit() ! {
 	db.check_connection_is_established()!
 	result := C.mysql_commit(db.conn)
 
+	if result != 0 {
+		db.throw_mysql_error()!
+	}
+}
+
+@[params]
+pub struct MySQLTransactionParam {
+	transaction_level MySQLTransactionLevel = .repeatable_read
+}
+
+// begin begins a new transaction.
+pub fn (mut db DB) begin(param MySQLTransactionParam) ! {
+	db.check_connection_is_established()!
+	db.set_transaction_level(param.transaction_level)!
+	result := db.exec_none('START TRANSACTION')
+	if result != 0 {
+		db.throw_mysql_error()!
+	}
+}
+
+// set_transaction_level set level for the transaction
+pub fn (mut db DB) set_transaction_level(level MySQLTransactionLevel) ! {
+	db.check_connection_is_established()!
+	mut sql_stmt := 'SET TRANSACTION ISOLATION LEVEL '
+	match level {
+		.read_uncommitted { sql_stmt += 'READ UNCOMMITTED' }
+		.read_committed { sql_stmt += 'READ COMMITTED' }
+		.repeatable_read { sql_stmt += 'REPEATABLE READ' }
+		.serializable { sql_stmt += 'SERIALIZABLE' }
+	}
+	result := db.exec_none(sql_stmt)
+	if result != 0 {
+		db.throw_mysql_error()!
+	}
+}
+
+// rollback rollbacks the current transaction.
+pub fn (mut db DB) rollback() ! {
+	db.check_connection_is_established()!
+	result := C.mysql_rollback(db.conn)
+
+	if result != 0 {
+		db.throw_mysql_error()!
+	}
+}
+
+// rollback_to rollbacks to a specified savepoint.
+pub fn (mut db DB) rollback_to(savepoint string) ! {
+	if !savepoint.is_identifier() {
+		return error('savepoint should be a identifier string')
+	}
+	db.check_connection_is_established()!
+	result := db.exec_none('ROLLBACK TO SAVEPOINT ${savepoint}')
+	if result != 0 {
+		db.throw_mysql_error()!
+	}
+}
+
+// savepoint create a new savepoint.
+pub fn (mut db DB) savepoint(savepoint string) ! {
+	if !savepoint.is_identifier() {
+		return error('savepoint should be a identifier string')
+	}
+	db.check_connection_is_established()!
+	result := db.exec_none('SAVEPOINT ${savepoint}')
 	if result != 0 {
 		db.throw_mysql_error()!
 	}
@@ -369,7 +441,7 @@ pub fn (db &DB) exec_one(query string) !Row {
 
 	mut row := Row{}
 	for i in 0 .. num_cols {
-		if unsafe { row_vals == &u8(0) } || unsafe { row_vals[i] == nil } {
+		if unsafe { row_vals[i] == nil } {
 			row.vals << ''
 		} else {
 			row.vals << mystring(unsafe { &u8(row_vals[i]) })
@@ -448,6 +520,7 @@ pub fn (stmt &StmtHandle) execute(params []string) ![]Row {
 			buffer:        param.str
 			buffer_length: u32(param.len)
 			length:        0
+			is_null:       0
 		}
 		bind_params << bind
 	}
@@ -470,6 +543,7 @@ pub fn (stmt &StmtHandle) execute(params []string) ![]Row {
 	}
 	num_cols := C.mysql_num_fields(query_metadata)
 	mut length := []u32{len: num_cols}
+	mut is_null := []bool{len: num_cols}
 
 	mut binds := []C.MYSQL_BIND{}
 	for i in 0 .. num_cols {
@@ -478,6 +552,7 @@ pub fn (stmt &StmtHandle) execute(params []string) ![]Row {
 			buffer:        0
 			buffer_length: 0
 			length:        unsafe { &length[i] }
+			is_null:       unsafe { &is_null[i] }
 		}
 		binds << bind
 	}
@@ -497,8 +572,11 @@ pub fn (stmt &StmtHandle) execute(params []string) ![]Row {
 			binds[i].buffer = data
 			binds[i].buffer_length = l
 			code = C.mysql_stmt_fetch_column(stmt.stmt, unsafe { &binds[i] }, i, 0)
-
-			row.vals << unsafe { data.vstring() }
+			if *(binds[i].is_null) {
+				row.vals << ''
+			} else {
+				row.vals << unsafe { data.vstring() }
+			}
 		}
 		rows << row
 	}

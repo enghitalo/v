@@ -75,6 +75,12 @@ pub fn (mut t TypeResolver) typeof_type(node ast.Expr, default_type ast.Type) as
 		if node.expr is ast.Ident && node.is_field_typ {
 			return t.get_type_from_comptime_var(node.expr)
 		}
+		field := node.scope.find_struct_field(node.expr.str(), node.expr_type, node.field_name)
+		if field != unsafe { nil } {
+			if field.smartcasts.len > 0 {
+				return field.smartcasts.last()
+			}
+		}
 		sym := t.table.sym(t.resolver.unwrap_generic(node.expr_type))
 		if f := t.table.find_field_with_embeds(sym, node.field_name) {
 			return f.typ
@@ -244,7 +250,7 @@ pub fn (t &TypeResolver) is_comptime_type(x ast.Type, y ast.ComptimeType) bool {
 			return x_kind == .string
 		}
 		.int {
-			return x_kind in [.i8, .i16, .int, .i64, .u8, .u16, .u32, .u64, .usize, .isize,
+			return x_kind in [.i8, .i16, .i32, .int, .i64, .u8, .u16, .u32, .u64, .usize, .isize,
 				.int_literal]
 		}
 		.float {

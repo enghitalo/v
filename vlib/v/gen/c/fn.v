@@ -256,18 +256,6 @@ fn (mut g Gen) gen_fn_decl(node &ast.FnDecl, skip bool) {
 
 	mut name := g.c_fn_name(node)
 	type_name := g.ret_styp(g.unwrap_generic(node.return_type))
-	if g.pref.obfuscate && g.cur_mod.name == 'main' && name.starts_with('main__') && !node.is_main
-		&& node.name != 'str' {
-		mut key := node.name
-		if node.is_method {
-			sym := g.table.sym(node.receiver.typ)
-			key = sym.name + '.' + node.name
-		}
-		g.writeln('/* obf: ${key} */')
-		name = g.obf_table[key] or {
-			panic('cgen: fn_decl: obf name "${key}" not found, this should never happen')
-		}
-	}
 	// Live functions are protected by a mutex, because otherwise they
 	// can be changed by the live reload thread, *while* they are
 	// running, with unpredictable results (usually just crashing).
@@ -980,6 +968,16 @@ fn (mut g Gen) call_expr(node ast.CallExpr) {
 						ret_typ = g.unwrap_generic(ret_sym.info.elem_type).derive(unwrapped_ret_typ)
 					}
 				}
+			} else {
+				r_typ := g.resolve_return_type(node)
+				if r_typ != ast.void_type && !r_typ.has_flag(.generic) {
+					// restore result/option flag, as `resolve_return_type` may clean them
+					if node.return_type.has_flag(.result) {
+						ret_typ = r_typ.set_flag(.result)
+					} else {
+						ret_typ = r_typ.set_flag(.option)
+					}
+				}
 			}
 		}
 		mut styp := g.styp(ret_typ)
@@ -1050,7 +1048,7 @@ fn (mut g Gen) call_expr(node ast.CallExpr) {
 					g.write('\n ${cur_line}')
 				}
 			} else {
-				if !g.inside_or_block && g.last_tmp_call_var.len > 0 {
+				if !g.inside_or_block && g.last_tmp_call_var.len > 0 && !cur_line.contains(' = ') {
 					g.write('\n\t*(${unwrapped_styp}*)${g.last_tmp_call_var.pop()}.data = ${cur_line}(*(${unwrapped_styp}*)${tmp_opt}.data)')
 				} else {
 					g.write('\n ${cur_line}(*(${unwrapped_styp}*)${tmp_opt}.data)')
@@ -1658,15 +1656,6 @@ fn (mut g Gen) method_call(node ast.CallExpr) {
 	if left_sym.kind == .chan && node.name in ['close', 'try_pop', 'try_push'] {
 		name = 'sync__Channel_${node.name}'
 	}
-	if g.pref.obfuscate && g.cur_mod.name == 'main' && name.starts_with('main__')
-		&& node.name != 'str' {
-		sym := g.table.sym(node.receiver_type)
-		key := sym.name + '.' + node.name
-		g.write('/* obf method call: ${key} */')
-		name = g.obf_table[key] or {
-			panic('cgen: obf name "${key}" not found, this should never happen')
-		}
-	}
 	mut is_range_slice := false
 	if node.receiver_type.is_ptr() && !left_type.is_ptr() {
 		if node.left is ast.IndexExpr {
@@ -2007,14 +1996,6 @@ fn (mut g Gen) fn_call(node ast.CallExpr) {
 			if cattr := f.attrs.find_first('c') {
 				name = cattr.arg
 			}
-		}
-	}
-	// Obfuscate only functions in the main module for now
-	if g.pref.obfuscate && g.cur_mod.name == 'main' && name.starts_with('main__') {
-		key := node.name
-		g.write('/* obf call: ${key} */')
-		name = g.obf_table[key] or {
-			panic('cgen: obf name "${key}" not found, this should never happen')
 		}
 	}
 	if !is_selector_call {
@@ -2541,8 +2522,10 @@ fn (mut g Gen) call_args(node ast.CallExpr) {
 					}
 				} else {
 					// passing variadic arg to another call which expects same array type
-					if args.len == 1 && args[arg_nr].typ.has_flag(.variadic)
-						&& args[arg_nr].typ == varg_type {
+					if args.len == 1
+						&& ((args[arg_nr].typ.has_flag(.variadic) && args[arg_nr].typ == varg_type)
+						|| (varg_type.has_flag(.variadic)
+						&& args[arg_nr].typ == varg_type.clear_flag(.variadic))) {
 						g.ref_or_deref_arg(args[arg_nr], arr_info.elem_type, node.language,
 							false)
 					} else {
@@ -2604,7 +2587,7 @@ fn (mut g Gen) keep_alive_call_postgen(node ast.CallExpr, tmp_cnt_save int) {
 
 @[inline]
 fn (mut g Gen) ref_or_deref_arg(arg ast.CallArg, expected_type ast.Type, lang ast.Language, is_smartcast bool) {
-	arg_typ := if arg.ct_expr {
+	mut arg_typ := if arg.ct_expr {
 		g.unwrap_generic(g.type_resolver.get_type(arg.expr))
 	} else {
 		g.unwrap_generic(arg.typ)
@@ -2744,6 +2727,13 @@ fn (mut g Gen) ref_or_deref_arg(arg ast.CallArg, expected_type ast.Type, lang as
 		if (arg_sym.info is ast.Alias || exp_sym.info is ast.Alias) && expected_type != arg_typ {
 			g.expr_opt_with_alias(arg.expr, arg_typ, expected_type)
 		} else {
+			if arg.expr is ast.Ident {
+				if arg.expr.obj is ast.Var {
+					if arg.expr.obj.smartcasts.len > 0 {
+						arg_typ = arg.expr.obj.smartcasts.last()
+					}
+				}
+			}
 			g.expr_with_opt(arg.expr, arg_typ, expected_type)
 		}
 		return

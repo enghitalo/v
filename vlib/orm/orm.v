@@ -131,7 +131,7 @@ fn (kind OrderType) to_str() string {
 // parentheses defines which fields will be inside ()
 // auto_fields are indexes of fields where db should generate a value when absent in an insert
 pub struct QueryData {
-pub:
+pub mut:
 	fields      []string
 	data        []Primitive
 	types       []int
@@ -149,7 +149,7 @@ pub:
 }
 
 pub struct TableField {
-pub:
+pub mut:
 	name        string
 	typ         int
 	nullable    bool
@@ -170,7 +170,7 @@ pub:
 // fields - Fields to select
 // types - Types to select
 pub struct SelectConfig {
-pub:
+pub mut:
 	table      string
 	is_count   bool
 	has_where  bool
@@ -392,17 +392,13 @@ pub fn orm_select_gen(cfg SelectConfig, q string, num bool, qm string, start_pos
 
 fn gen_where_clause(where QueryData, q string, qm string, num bool, mut c &int) string {
 	mut str := ''
+
 	for i, field in where.fields {
-		mut pre_par := false
-		mut post_par := false
-		for par in where.parentheses {
-			if i in par {
-				pre_par = par[0] == i
-				post_par = par[1] == i
-			}
-		}
-		if pre_par {
-			str += '('
+		current_pre_par := where.parentheses.count(it[0] == i)
+		current_post_par := where.parentheses.count(it[1] == i)
+
+		if current_pre_par > 0 {
+			str += ' ( '.repeat(current_pre_par)
 		}
 		str += '${q}${field}${q} ${where.kinds[i].to_str()}'
 		if !where.kinds[i].is_unary() {
@@ -412,8 +408,8 @@ fn gen_where_clause(where QueryData, q string, qm string, num bool, mut c &int) 
 				c++
 			}
 		}
-		if post_par {
-			str += ')'
+		if current_post_par > 0 {
+			str += ' ) '.repeat(current_post_par)
 		}
 		if i < where.fields.len - 1 {
 			if where.is_and[i] {

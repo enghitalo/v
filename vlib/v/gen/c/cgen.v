@@ -96,7 +96,7 @@ mut:
 	is_assign_lhs             bool // inside left part of assign expr (for array_set(), etc)
 	is_void_expr_stmt         bool // ExprStmt whose result is discarded
 	is_arraymap_set           bool // map or array set value state
-	is_amp                    bool // for `&Foo{}` to merge PrefixExpr `&` and StructInit `Foo{}`; also for `&u8(0)` etc
+	is_amp                    bool // for `&Foo{}` to merge PrefixExpr `&` and StructInit `Foo{}`; also for `&u8(unsafe { nil })` etc
 	is_sql                    bool // Inside `sql db{}` statement, generating sql instead of C (e.g. `and` instead of `&&` etc)
 	is_shared                 bool // for initialization of hidden mutex in `[rw]shared` literals
 	is_vlines_enabled         bool // is it safe to generate #line directives when -g is passed
@@ -118,6 +118,7 @@ mut:
 	chan_pop_options          map[string]string // types for `x := <-ch or {...}`
 	chan_push_options         map[string]string // types for `ch <- x or {...}`
 	mtxs                      string            // array of mutexes if the `lock` has multiple variables
+	tmp_var_ptr               map[string]bool   // indicates if the tmp var passed to or_block() is a ptr
 	labeled_loops             map[string]&ast.Stmt
 	contains_ptr_cache        map[ast.Type]bool
 	inner_loop                &ast.Stmt = unsafe { nil }
@@ -152,6 +153,7 @@ mut:
 	inside_cast_in_heap       int // inside cast to interface type in heap (resolve recursive calls)
 	inside_cast               bool
 	inside_selector           bool
+	inside_selector_deref     bool // indicates if the inside selector was already dereferenced
 	inside_memset             bool
 	inside_const              bool
 	inside_array_item         bool
@@ -276,7 +278,7 @@ pub:
 	header           string          // produced output for out.h (-parallel-cc)
 	res_builder      strings.Builder // produced output (complete)
 	out_str          string          // produced output from g.out
-	out0_str         string          // helpers output (auto fns, dump fns) for out_0.c (-parallel-cc)	
+	out0_str         string          // helpers output (auto fns, dump fns) for out_0.c (-parallel-cc)
 	extern_str       string          // extern chunk for (-parallel-cc)
 	out_fn_start_pos []int           // fn decl positions
 }
@@ -354,15 +356,6 @@ pub fn gen(files []&ast.File, mut table ast.Table, pref_ &pref.Preferences) GenO
 
 	global_g.type_resolver = type_resolver.TypeResolver.new(table, global_g)
 	global_g.comptime = &global_g.type_resolver.info
-	/*
-	global_g.out_parallel = []strings.Builder{len: nr_cpus}
-	for i in 0 .. nr_cpus {
-		global_g.out_parallel[i] = strings.new_builder(100000)
-		global_g.out_parallel[i].writeln('#include "out.h"\n')
-	}
-	println('LEN=')
-	println(global_g.out_parallel.len)
-	*/
 	// anon fn may include assert and thus this needs
 	// to be included before any test contents are written
 	if pref_.is_test {
@@ -515,18 +508,27 @@ pub fn gen(files []&ast.File, mut table ast.Table, pref_ &pref.Preferences) GenO
 
 	// to make sure type idx's are the same in cached mods
 	if g.pref.build_mode == .build_module {
+		is_toml := g.pref.path.contains('/toml')
 		for idx, sym in g.table.type_symbols {
 			if idx in [0, 31] {
 				continue
 			}
-			g.definitions.writeln('int _v_type_idx_${sym.cname}();')
+			if is_toml && sym.cname.contains('map[string]') {
+				// Temporary hack to make toml work with -usecache TODO remove
+				continue
+			}
+			g.definitions.writeln('int _v_type_idx_${sym.cname}(); // 1build module ${g.pref.path}')
 		}
 	} else if g.pref.use_cache {
+		is_toml := g.pref.path.contains('/toml')
 		for idx, sym in g.table.type_symbols {
 			if idx in [0, 31] {
 				continue
 			}
-			g.definitions.writeln('int _v_type_idx_${sym.cname}() { return ${idx}; };')
+			if is_toml && sym.cname.contains('map[string]') {
+				continue
+			}
+			g.definitions.writeln('int _v_type_idx_${sym.cname}() { return ${idx}; }; //lol ${g.pref.path}')
 		}
 	}
 
@@ -1057,29 +1059,6 @@ pub fn (mut g Gen) init() {
 	}
 	if g.pref.is_livemain || g.pref.is_liveshared {
 		g.generate_hotcode_reloading_declarations()
-	}
-	// Obfuscate only functions in the main module for now.
-	// Generate the obf_ast.
-	if g.pref.obfuscate {
-		mut i := 0
-		// fns
-		for key, f in g.table.fns {
-			if f.mod != 'main' && key != 'main' {
-				continue
-			}
-			g.obf_table[key] = '_f${i}'
-			i++
-		}
-		// methods
-		for type_sym in g.table.type_symbols {
-			if type_sym.mod != 'main' {
-				continue
-			}
-			for method in type_sym.methods {
-				g.obf_table[type_sym.name + '.' + method.name] = '_f${i}'
-				i++
-			}
-		}
 	}
 	// we know that this is being called before the multi-threading starts
 	// and this is being called in the main thread, so we can mutate the table
@@ -2222,8 +2201,9 @@ fn (mut g Gen) stmts_with_tmp_var(stmts []ast.Stmt, tmp_var string) bool {
 				}
 			}
 			g.stmt(stmt)
-			if (g.inside_if_option || g.inside_if_result || g.inside_match_option
-				|| g.inside_match_result) && stmt is ast.ExprStmt {
+			if stmt is ast.ExprStmt && (g.inside_if_option || g.inside_if_result
+				|| g.inside_match_option || g.inside_match_result
+				|| (stmt.expr is ast.IndexExpr && stmt.expr.or_expr.kind != .absent)) {
 				g.writeln(';')
 			}
 		}
@@ -2315,6 +2295,7 @@ fn (mut g Gen) expr_with_tmp_var(expr ast.Expr, expr_typ ast.Type, ret_typ ast.T
 			g.writeln('${g.styp(ret_typ)} ${tmp_var};')
 		}
 		mut expr_is_fixed_array_var := false
+		mut fn_option_clone := false
 		if ret_typ_is_option {
 			if expr_typ_is_option && expr in [ast.StructInit, ast.ArrayInit, ast.MapInit] {
 				simple_assign = expr is ast.StructInit
@@ -2348,6 +2329,7 @@ fn (mut g Gen) expr_with_tmp_var(expr ast.Expr, expr_typ ast.Type, ret_typ ast.T
 							g.write('(')
 							g.write_fn_ptr_decl(&final_ret_sym.info, '')
 							g.write(')')
+							fn_option_clone = expr is ast.SelectorExpr && expr_typ.has_flag(.option)
 						}
 					}
 				}
@@ -2359,6 +2341,9 @@ fn (mut g Gen) expr_with_tmp_var(expr ast.Expr, expr_typ ast.Type, ret_typ ast.T
 			g.write('_result_ok(&(${styp}[]) { ')
 		}
 		g.expr_with_cast(expr, expr_typ, ret_typ)
+		if fn_option_clone {
+			g.write('.data')
+		}
 		if ret_typ_is_option {
 			if simple_assign {
 				g.writeln(';')
@@ -2813,7 +2798,8 @@ fn (mut g Gen) call_cfn_for_casting_expr(fname string, expr ast.Expr, exp ast.Ty
 			&& (expr.expr is ast.ArrayInit && expr.expr.is_fixed)
 
 		if !is_cast_fixed_array_init && (is_comptime_variant || !expr.is_lvalue()
-			|| (expr is ast.Ident && expr.obj.is_simple_define_const())) {
+			|| (expr is ast.Ident && (expr.obj.is_simple_define_const()
+			|| (expr.obj is ast.Var && expr.obj.is_index_var)))) {
 			// Note: the `_to_sumtype_` family of functions do call memdup internally, making
 			// another duplicate with the HEAP macro is redundant, so use ADDR instead:
 			if expr.is_as_cast() {
@@ -3006,7 +2992,8 @@ fn (mut g Gen) expr_with_cast(expr ast.Expr, got_type_raw ast.Type, expected_typ
 					}
 				}
 			} else if expr is ast.SelectorExpr {
-				if v := scope.find_struct_field(expr.expr.str(), expr.expr_type, expr.field_name) {
+				v := scope.find_struct_field(expr.expr.str(), expr.expr_type, expr.field_name)
+				if v != unsafe { nil } {
 					if v.smartcasts.len > 0 && unwrapped_expected_type == v.orig_type {
 						is_already_sum_type = true
 					}
@@ -3090,7 +3077,9 @@ fn (mut g Gen) expr_with_cast(expr ast.Expr, got_type_raw ast.Type, expected_typ
 			return
 		}
 	}
-	if exp_sym.kind == .function && !expected_type.has_option_or_result() {
+	if (exp_sym.kind == .function && !expected_type.has_option_or_result())
+		|| (g.inside_struct_init && expected_type == ast.voidptr_type
+		&& expected_type != got_type_raw) {
 		g.write('(voidptr)')
 	}
 	// no cast
@@ -3165,7 +3154,8 @@ fn (mut g Gen) asm_stmt(stmt ast.AsmStmt) {
 			g.write(' ')
 		}
 		// swap destination and operands for att syntax, not for arm64
-		if template.args.len != 0 && !template.is_directive && stmt.arch != .arm64 {
+		if template.args.len != 0 && !template.is_directive && stmt.arch != .arm64
+			&& stmt.arch != .s390x && stmt.arch != .ppc64le {
 			template.args.prepend(template.args.last())
 			template.args.delete(template.args.len - 1)
 		}
@@ -3242,6 +3232,8 @@ fn (mut g Gen) asm_arg(arg ast.AsmArg, stmt ast.AsmStmt) {
 		ast.IntegerLiteral {
 			if stmt.arch == .arm64 {
 				g.write('#${arg.val}')
+			} else if stmt.arch == .s390x || stmt.arch == .ppc64le {
+				g.write('${arg.val}')
 			} else {
 				g.write('\$${arg.val}')
 			}
@@ -4071,10 +4063,24 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 		stmt_str := g.go_before_last_stmt().trim_space()
 		styp := g.styp(g.unwrap_generic(node.typ))
 		g.empty_line = true
+		is_option_unwrap := node.typ.has_flag(.option)
 		tmp_var := g.new_tmp_var()
-		g.write('${styp} ${tmp_var} = ')
-		if is_ptr {
+		g.write('${styp} ')
+		if is_option_unwrap {
+			g.write('*')
+		}
+		g.write('${tmp_var} = ')
+		mut needs_addr := false
+		needs_deref := is_ptr && !is_option_unwrap
+		if needs_deref {
 			g.write('*(')
+		} else if is_option_unwrap && !is_ptr {
+			needs_addr = node.expr !in [ast.Ident, ast.PrefixExpr]
+			if !needs_addr {
+				g.write('&')
+			} else {
+				g.write('ADDR(${styp}, ')
+			}
 		}
 		g.expr(node.expr)
 		for i, embed in node.from_embed_types {
@@ -4098,14 +4104,23 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 			g.write('.')
 		}
 		g.write(field_name)
-		if is_ptr {
+		if needs_deref {
 			g.write(')')
 		}
+		if needs_addr {
+			g.write(')')
+		}
+		if is_option_unwrap {
+			g.tmp_var_ptr[tmp_var] = true
+		}
 		g.or_block(tmp_var, node.or_block, node.typ)
+		if is_option_unwrap {
+			g.tmp_var_ptr.delete(tmp_var)
+		}
 		g.write2(stmt_str, ' ')
 		unwrapped_typ := node.typ.clear_option_and_result()
 		unwrapped_styp := g.styp(unwrapped_typ)
-		g.write('(*(${unwrapped_styp}*)${tmp_var}.data)')
+		g.write('(*(${unwrapped_styp}*)${tmp_var}->data)')
 		return
 	}
 
@@ -4138,18 +4153,21 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 	mut field_typ := ast.void_type
 	mut is_option_unwrap := false
 	is_iface_or_sumtype := sym.kind in [.interface, .sum_type]
+	mut deref_count := 0
 	if f := g.table.find_field_with_embeds(sym, node.field_name) {
 		field_sym := g.table.sym(f.typ)
 		field_typ = f.typ
 		if is_iface_or_sumtype {
 			g.write('(*(')
+			deref_count++
 		}
 		is_option := field_typ.has_flag(.option)
 		if field_sym.kind in [.sum_type, .interface] || is_option {
 			if !prevent_sum_type_unwrapping_once {
 				// check first if field is sum type because scope searching is expensive
 				scope := g.file.scope.innermost(node.pos.pos)
-				if field := scope.find_struct_field(node.expr.str(), node.expr_type, node.field_name) {
+				field := scope.find_struct_field(node.expr.str(), node.expr_type, node.field_name)
+				if field != unsafe { nil } {
 					nested_unwrap := is_option && field.smartcasts.len > 1
 					is_option_unwrap = is_option && field.smartcasts.len > 0
 						&& field.typ.clear_flag(.option) == field.smartcasts.last()
@@ -4158,14 +4176,16 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 					}
 					if nested_unwrap && field_sym.kind == .sum_type {
 						g.write('*(')
+						deref_count++
 					}
 					for i, typ in field.smartcasts {
 						if i == 0 && (is_option_unwrap || nested_unwrap) {
 							deref := if g.inside_selector {
-								if is_iface_or_sumtype {
-									'*'.repeat(field.smartcasts.last().nr_muls())
+								if is_iface_or_sumtype || (field.orig_type.is_ptr() && g.left_is_opt
+									&& is_option_unwrap) {
+									'*'.repeat(typ.nr_muls())
 								} else {
-									'*'.repeat(field.smartcasts.last().nr_muls() + 1)
+									'*'.repeat(typ.nr_muls() + 1)
 								}
 							} else if sym.kind == .interface && !typ.is_ptr()
 								&& field.orig_type.has_flag(.option) {
@@ -4173,6 +4193,8 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 							} else {
 								'*'
 							}
+							deref_count += deref.len
+							g.inside_selector_deref = deref_count > typ.nr_muls()
 							g.write('(${deref}(${g.styp(typ)}*)')
 						}
 						if i == 0 || !nested_unwrap {
@@ -4279,6 +4301,7 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 		g.write('((${g.base_type(field_typ)})')
 	}
 	old_inside_selector := g.inside_selector
+	old_inside_selector_deref := g.inside_selector_deref
 	g.inside_selector = node.expr is ast.SelectorExpr && node.expr.expr is ast.Ident
 	n_ptr := node.expr_type.nr_muls() - 1
 	if n_ptr > 0 {
@@ -4288,7 +4311,9 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 	} else {
 		g.expr(node.expr)
 	}
+	mut opt_ptr_already_deref := g.inside_selector_deref
 	g.inside_selector = old_inside_selector
+	g.inside_selector_deref = old_inside_selector_deref
 	if field_is_opt {
 		g.write(')')
 	}
@@ -4340,6 +4365,7 @@ fn (mut g Gen) selector_expr(node ast.SelectorExpr) {
 		|| (((!is_dereferenced && unwrapped_expr_type.is_ptr()) || sym.kind == .chan
 		|| alias_to_ptr) && node.from_embed_types.len == 0)
 		|| (node.expr.is_as_cast() && g.inside_smartcast)
+		|| (!opt_ptr_already_deref && unwrapped_expr_type.is_ptr())
 	if !has_embed && left_is_ptr {
 		g.write('->')
 	} else {
@@ -5243,8 +5269,17 @@ fn (mut g Gen) ident(node ast.Ident) {
 						is_option_unwrap := is_option && typ == node.obj.typ.clear_flag(.option)
 						cast_sym := g.table.sym(g.unwrap_generic(typ))
 						if obj_sym.kind == .interface && cast_sym.kind == .interface {
-							ptr := '*'.repeat(node.obj.typ.nr_muls())
-							g.write('I_${obj_sym.cname}_as_I_${cast_sym.cname}(${ptr}${node.name})')
+							if cast_sym.cname != obj_sym.cname {
+								ptr := '*'.repeat(node.obj.typ.nr_muls())
+								g.write('I_${obj_sym.cname}_as_I_${cast_sym.cname}(${ptr}${node.name})')
+							} else {
+								ptr := if is_option {
+									''
+								} else {
+									'*'.repeat(node.obj.typ.nr_muls())
+								}
+								g.write('${ptr}${node.name}')
+							}
 						} else {
 							mut is_ptr := false
 							if i == 0 {
@@ -5323,14 +5358,6 @@ fn (mut g Gen) ident(node ast.Ident) {
 				}
 			} else if node.concrete_types.len > 0 {
 				name = g.generic_fn_name(node.concrete_types, name)
-			}
-		}
-
-		if g.pref.obfuscate && g.cur_mod.name == 'main' && name.starts_with('main__') {
-			key := node.name
-			g.write('/* obf identfn: ${key} */')
-			name = g.obf_table[key] or {
-				panic('cgen: obf name "${key}" not found, this should never happen')
 			}
 		}
 	}
@@ -5487,10 +5514,9 @@ fn (mut g Gen) concat_expr(node ast.ConcatExpr) {
 		g.write('(${styp}){')
 		for i, expr in node.vals {
 			g.write('.arg${i}=')
-			if types[i].has_flag(.option) && expr.is_literal() {
-				g.write('{.data=')
-				g.expr(expr)
-				g.write('}')
+			expr_typ := g.get_expr_type(expr)
+			if expr_typ != ast.void_type && types[i].has_flag(.option) {
+				g.expr_with_opt(expr, expr_typ, types[i])
 			} else {
 				old_left_is_opt := g.left_is_opt
 				g.left_is_opt = true
@@ -5912,7 +5938,7 @@ fn (mut g Gen) return_stmt(node ast.Return) {
 					multi_unpack += g.go_before_last_stmt()
 					g.write(line)
 					expr_styp := g.base_type(call_expr.return_type)
-					tmp = ('(*(${expr_styp}*)${tmp}.data)')
+					tmp = '(*(${expr_styp}*)${tmp}.data)'
 				}
 				expr_types := expr_sym.mr_info().types
 				for j, _ in expr_types {
@@ -5929,6 +5955,9 @@ fn (mut g Gen) return_stmt(node ast.Return) {
 				line := g.go_before_last_stmt().trim_space()
 				expr_styp := g.styp(node.types[i])
 				g.write('memcpy(&${tmpvar}.arg${arg_idx}, ')
+				if expr is ast.StructInit {
+					g.write('(${expr_styp})')
+				}
 				g.expr(expr)
 				g.writeln(', sizeof(${expr_styp}));')
 				final_assignments += g.go_before_last_stmt() + '\t'
@@ -6924,6 +6953,7 @@ fn (mut g Gen) gen_or_block_stmts(cvar_name string, cast_typ string, stmts []ast
 					mut is_array_fixed := false
 					mut return_wrapped := false
 					mut return_is_option := is_option && return_type.has_option_or_result()
+					tmp_op := if cvar_name in g.tmp_var_ptr { '->' } else { '.' }
 					if is_option {
 						is_array_fixed = g.table.final_sym(return_type).kind == .array_fixed
 						if !is_array_fixed {
@@ -6935,7 +6965,7 @@ fn (mut g Gen) gen_or_block_stmts(cvar_name string, cast_typ string, stmts []ast
 								return_wrapped = true
 							} else if expr_stmt.expr is ast.CallExpr {
 								if expr_stmt.expr.is_return_used {
-									g.write('*(${cast_typ}*) ${cvar_name}.data = ')
+									g.write('*(${cast_typ}*) ${cvar_name}${tmp_op}data = ')
 								}
 							} else if g.inside_opt_or_res && return_is_option && g.inside_assign {
 								g.write('_option_ok(&(${cast_typ}[]) { ')
@@ -6944,14 +6974,14 @@ fn (mut g Gen) gen_or_block_stmts(cvar_name string, cast_typ string, stmts []ast
 								g.indent--
 								return
 							} else {
-								g.write('*(${cast_typ}*) ${cvar_name}.data = ')
+								g.write('*(${cast_typ}*) ${cvar_name}${tmp_op}data = ')
 							}
 						}
 					} else {
 						g.write('${cvar_name} = ')
 					}
 					if is_array_fixed {
-						g.write('memcpy(${cvar_name}.data, (${cast_typ})')
+						g.write('memcpy(${cvar_name}${tmp_op}data, (${cast_typ})')
 					}
 					// return expr or { fn_returns_option() }
 					if is_option && g.inside_return && expr_stmt.expr is ast.CallExpr
@@ -6987,6 +7017,7 @@ fn (mut g Gen) gen_or_block_stmts(cvar_name string, cast_typ string, stmts []ast
 // Returns the type of the last stmt
 fn (mut g Gen) or_block(var_name string, or_block ast.OrExpr, return_type ast.Type) {
 	cvar_name := c_name(var_name)
+	tmp_op := if var_name in g.tmp_var_ptr { '->' } else { '.' }
 	if or_block.kind == .block && or_block.stmts.len == 0 {
 		// generate nothing, block is empty
 		g.write(';\n${util.tabs(g.indent)}(void)${cvar_name};')
@@ -6996,20 +7027,20 @@ fn (mut g Gen) or_block(var_name string, or_block ast.OrExpr, return_type ast.Ty
 	is_none_ok := return_type == ast.ovoid_type
 	g.writeln(';')
 	if is_none_ok {
-		g.writeln('if (${cvar_name}.state != 0) {')
+		g.writeln('if (${cvar_name}${tmp_op}state != 0) {')
 	} else {
 		if return_type != 0 && g.table.sym(return_type).kind == .function {
 			mr_styp = 'voidptr'
 		}
 		if return_type.has_flag(.result) {
-			g.writeln('if (${cvar_name}.is_error) {')
+			g.writeln('if (${cvar_name}${tmp_op}is_error) {')
 		} else {
-			g.writeln('if (${cvar_name}.state != 0) {')
+			g.writeln('if (${cvar_name}${tmp_op}state != 0) {')
 		}
 	}
 	if or_block.kind == .block {
 		g.or_expr_return_type = return_type.clear_option_and_result()
-		g.writeln('\tIError err = ${cvar_name}.err;')
+		g.writeln('\tIError err = ${cvar_name}${tmp_op}err;')
 
 		g.inside_or_block = true
 		defer {
@@ -7029,7 +7060,7 @@ fn (mut g Gen) or_block(var_name string, or_block ast.OrExpr, return_type ast.Ty
 		|| (or_block.kind == .propagate_option && return_type.has_flag(.result)) {
 		if g.file.mod.name == 'main' && (g.fn_decl == unsafe { nil } || g.fn_decl.is_main) {
 			// In main(), an `opt()!` call is sugar for `opt() or { panic(err) }`
-			err_msg := 'IError_name_table[${cvar_name}.err._typ]._method_msg(${cvar_name}.err._object)'
+			err_msg := 'IError_name_table[${cvar_name}${tmp_op}err._typ]._method_msg(${cvar_name}${tmp_op}err._object)'
 			if g.pref.is_debug {
 				paline, pafile, pamod, pafn := g.panic_debug_info(or_block.pos)
 				g.writeln('panic_debug(${paline}, tos3("${pafile}"), tos3("${pamod}"), tos3("${pafn}"), ${err_msg});')
@@ -7057,7 +7088,7 @@ fn (mut g Gen) or_block(var_name string, or_block ast.OrExpr, return_type ast.Ty
 	} else if or_block.kind == .propagate_option {
 		if g.file.mod.name == 'main' && (g.fn_decl == unsafe { nil } || g.fn_decl.is_main) {
 			// In main(), an `opt()?` call is sugar for `opt() or { panic(err) }`
-			err_msg := 'IError_name_table[${cvar_name}.err._typ]._method_msg(${cvar_name}.err._object)'
+			err_msg := 'IError_name_table[${cvar_name}${tmp_op}err._typ]._method_msg(${cvar_name}${tmp_op}err._object)'
 			if g.pref.is_debug {
 				paline, pafile, pamod, pafn := g.panic_debug_info(or_block.pos)
 				g.writeln('panic_debug(${paline}, tos3("${pafile}"), tos3("${pamod}"), tos3("${pafn}"), ${err_msg}.len == 0 ? _SLIT("option not set ()") : ${err_msg});')
@@ -7554,6 +7585,12 @@ fn (mut g Gen) as_cast(node ast.AsCast) {
 				g.unwrap_option_type(node.expr.typ, '${node.expr.expr.name}.${node.expr.field_name}',
 					node.expr.expr.is_auto_heap())
 				is_optional_ident_var = true
+			} else if node.expr.expr is ast.SelectorExpr && node.expr.typ.has_flag(.option) {
+				if node.expr.expr.expr is ast.Ident {
+					g.unwrap_option_type(node.expr.typ, '${node.expr.expr.expr.name}.${node.expr.expr.field_name}.${node.expr.field_name}',
+						node.expr.expr.expr.is_auto_heap())
+					is_optional_ident_var = true
+				}
 			}
 		}
 		if !is_optional_ident_var {

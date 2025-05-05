@@ -182,11 +182,10 @@ fn (mut c Checker) if_expr(mut node ast.IfExpr) ast.Type {
 								} else {
 									.skip
 								}
-							} else if comptime_field_name == c.comptime.comptime_for_method_var {
-								if left.field_name == 'return_type' {
-									skip_state = c.check_compatible_types(c.unwrap_generic(c.comptime.comptime_for_method_ret_type),
-										right as ast.TypeNode)
-								}
+							} else if comptime_field_name == c.comptime.comptime_for_method_var
+								&& left.field_name == 'return_type' {
+								skip_state = c.check_compatible_types(c.unwrap_generic(c.comptime.comptime_for_method_ret_type),
+									right as ast.TypeNode)
 							} else if comptime_field_name in [
 								c.comptime.comptime_for_variant_var,
 								c.comptime.comptime_for_enum_var,
@@ -284,6 +283,14 @@ fn (mut c Checker) if_expr(mut node ast.IfExpr) ast.Type {
 									else {
 										ComptimeBranchSkipState.skip
 									}
+								}
+							}
+						} else if comptime_field_name == c.comptime.comptime_for_method_var {
+							if left.field_name == 'return_type' {
+								skip_state = if c.unwrap_generic(c.comptime.comptime_for_method_ret_type).idx() == right.val.i64() {
+									ComptimeBranchSkipState.eval
+								} else {
+									ComptimeBranchSkipState.skip
 								}
 							}
 						} else if left.expr is ast.TypeOf {
@@ -691,7 +698,8 @@ fn (mut c Checker) smartcast_if_conds(mut node ast.Expr, mut scope ast.Scope, co
 		mut first_cond := control_expr.branches[0].cond
 		// handles unwrapping on if var == none { /**/ } else { /*unwrapped var*/ }
 		if mut first_cond is ast.InfixExpr {
-			if first_cond.left is ast.Ident && first_cond.op == .eq && first_cond.right is ast.None {
+			if first_cond.left in [ast.Ident, ast.SelectorExpr] && first_cond.op == .eq
+				&& first_cond.right is ast.None {
 				if c.comptime.get_ct_type_var(first_cond.left) == .smartcast {
 					first_cond.left_type = c.type_resolver.get_type(first_cond.left)
 					c.smartcast(mut first_cond.left, first_cond.left_type, first_cond.left_type.clear_flag(.option), mut

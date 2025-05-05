@@ -96,7 +96,7 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 							symfield.is_recursive = true
 						} else {
 							c.error('recursive struct is only possible with optional pointer (e.g. ?&${c.table.type_to_str(field.typ.clear_flag(.option))})',
-								node.pos)
+								field.pos)
 						}
 					}
 				}
@@ -131,6 +131,16 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 						}
 						else {}
 					}
+				}
+
+				if c.table.final_sym(field.typ).kind == .voidptr
+					&& field.default_expr_typ !in [ast.nil_type, ast.voidptr_type, ast.byteptr_type]
+					&& !field.default_expr_typ.is_ptr()
+					&& (field.default_expr !is ast.IntegerLiteral
+					|| (field.default_expr is ast.IntegerLiteral
+					&& field.default_expr.val.int() != 0)) {
+					c.note('voidptr variables may only be assigned voidptr values (e.g. unsafe { voidptr(${field.default_expr.str()}) })',
+						field.default_expr.pos())
 				}
 
 				// disallow map `mut a = b`
@@ -237,6 +247,13 @@ fn (mut c Checker) struct_decl(mut node ast.StructDecl) {
 							c.error('cannot initialize a fixed size array field that uses `\$d()` as size quantifier since the size may change via -d',
 								field.default_expr.pos())
 						}
+					}
+				}
+				if field.default_expr is ast.ArrayInit {
+					if c.table.final_sym(field.default_expr_typ).kind in [.array, .array_fixed]
+						&& c.table.value_type(field.default_expr_typ) == struct_typ_idx {
+						c.error('cannot initialize array of same struct type that is being defined (recursion detected)',
+							field.pos)
 					}
 				}
 				interface_implemented := sym.kind == .interface
@@ -716,10 +733,17 @@ fn (mut c Checker) struct_init(mut node ast.StructInit, is_field_zero_struct_ini
 				if exp_type_is_option && got_type.is_ptr() && !exp_type.is_ptr() {
 					c.error('cannot assign a pointer to option struct field', init_field.pos)
 				}
-				if exp_type_sym.kind == .voidptr && got_type_sym.kind == .struct
-					&& !got_type.is_ptr() {
-					c.error('allocate `${got_type_sym.name}` on the heap for use in other functions',
-						init_field.pos)
+				if exp_type_sym.kind == .voidptr {
+					if got_type_sym.kind == .struct && !got_type.is_ptr() {
+						c.error('allocate `${got_type_sym.name}` on the heap for use in other functions',
+							init_field.pos)
+					} else if got_type !in [ast.nil_type, ast.voidptr_type, ast.byteptr_type]
+						&& !got_type.is_ptr() && (init_field.expr !is ast.IntegerLiteral
+						|| (init_field.expr is ast.IntegerLiteral
+						&& init_field.expr.val.int() != 0)) {
+						c.note('voidptr variables may only be assigned voidptr values (e.g. unsafe { voidptr(${init_field.expr.str()}) })',
+							init_field.expr.pos())
+					}
 				}
 				// disallow `mut a: b`, when b is const map
 				if exp_type_sym.kind == .map && got_type_sym.kind == .map && !got_type.is_ptr()

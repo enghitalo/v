@@ -280,6 +280,11 @@ fn (mut c Checker) fn_decl(mut node ast.FnDecl) {
 				c.error('result type arguments are not supported', param.type_pos)
 			}
 			arg_typ_sym := c.table.sym(param.typ)
+			if arg_typ_sym.language == .v && param.typ == ast.any_type
+				&& c.file.mod.name != 'builtin' {
+				c.note('the `any` type is deprecated and will be removed soon - either use an empty interface, or a sum type',
+					param.pos)
+			}
 			// resolve unresolved fixed array size e.g. [mod.const]array_type
 			if arg_typ_sym.info is ast.ArrayFixed
 				&& c.array_fixed_has_unresolved_size(arg_typ_sym.info) {
@@ -704,6 +709,7 @@ fn (mut c Checker) call_expr(mut node ast.CallExpr) ast.Type {
 	old_inside_fn_arg := c.inside_fn_arg
 	c.inside_fn_arg = true
 	mut continue_check := true
+	node.left_type = left_type
 	// Now call `method_call` or `fn_call` for specific checks.
 	typ := if node.is_method {
 		c.method_call(mut node, mut continue_check)
@@ -863,6 +869,7 @@ fn (mut c Checker) needs_unwrap_generic_type(typ ast.Type) bool {
 fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.Type {
 	is_va_arg := node.name == 'C.va_arg'
 	is_json_decode := node.name == 'json.decode'
+	is_json_encode := node.name == 'json.encode'
 	mut fn_name := node.name
 	if node.is_static_method {
 		// resolve static call T.name()
@@ -1014,7 +1021,6 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 	if node.left is ast.AnonFn {
 		// it was set to anon for checker errors, clear for gen
 		node.name = ''
-		c.expr(mut node.left)
 		left := node.left as ast.AnonFn
 		if left.typ != ast.no_type {
 			anon_fn_sym := c.table.sym(left.typ)
@@ -1033,7 +1039,6 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		}
 	}
 	if !found && node.left is ast.IndexExpr {
-		c.expr(mut node.left)
 		left := node.left as ast.IndexExpr
 		sym := c.table.final_sym(left.left_type)
 		if sym.info is ast.Array {
@@ -1071,7 +1076,6 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 		}
 	}
 	if !found && node.left is ast.CallExpr {
-		c.expr(mut node.left)
 		left := node.left as ast.CallExpr
 		if left.return_type != 0 {
 			sym := c.table.sym(left.return_type)
@@ -1780,6 +1784,10 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 			}
 		}
 	}
+	if is_json_encode {
+		// json.encode param is set voidptr, we should bound the proper type here
+		node.expected_arg_types = [node.args[0].typ]
+	}
 	if func.generic_names.len != node.concrete_types.len {
 		// no type arguments given in call, attempt implicit instantiation
 		c.infer_fn_generic_types(func, mut node)
@@ -1870,7 +1878,7 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 
 	// resolve generic fn return type
 	if func.generic_names.len > 0 && node.return_type != ast.void_type {
-		ret_type := c.resolve_fn_return_type(func, node)
+		ret_type := c.resolve_fn_return_type(func, node, concrete_types)
 		c.register_trace_call(node, func)
 		node.return_type = ret_type
 		return ret_type
@@ -1974,7 +1982,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr, mut continue_check &bool) 
 			}
 		}
 	}
-	left_type := c.expr(mut node.left)
+	left_type := node.left_type
 	if left_type == ast.void_type {
 		// c.error('cannot call a method using an invalid expression', node.pos)
 		continue_check = false
@@ -2159,9 +2167,9 @@ fn (mut c Checker) method_call(mut node ast.CallExpr, mut continue_check &bool) 
 			mut field_typ := field.typ
 			if field.typ.has_flag(.option) {
 				// unwrapped callback (if f.func != none {})
-				if scope_field := node.scope.find_struct_field(node.left.str(), node.left_type,
+				scope_field := node.scope.find_struct_field(node.left.str(), node.left_type,
 					method_name)
-				{
+				if scope_field != unsafe { nil } {
 					field_typ = scope_field.smartcasts.last()
 					node.is_unwrapped_fn_selector = true
 				} else {
@@ -2665,7 +2673,7 @@ fn (mut c Checker) method_call(mut node ast.CallExpr, mut continue_check &bool) 
 	}
 	// resolve generic fn return type
 	if method_generic_names_len > 0 && method.return_type.has_flag(.generic) {
-		ret_type := c.resolve_fn_return_type(method, node)
+		ret_type := c.resolve_fn_return_type(method, node, concrete_types)
 		c.register_trace_call(node, method)
 		node.return_type = ret_type
 		return ret_type
@@ -2957,7 +2965,6 @@ fn (mut c Checker) check_predicate_param(is_map bool, elem_typ ast.Type, node as
 		// Finish early so that it doesn't fail later
 		return
 	}
-	elem_sym := c.table.sym(elem_typ)
 	arg_expr := node.args[0].expr
 	match arg_expr {
 		ast.AnonFn {
@@ -2969,11 +2976,11 @@ fn (mut c Checker) check_predicate_param(is_map bool, elem_typ ast.Type, node as
 				c.error('function needs exactly 1 argument', arg_expr.decl.pos)
 			} else if is_map && (arg_expr.decl.return_type == ast.void_type
 				|| arg_expr.decl.params[0].typ != elem_typ) {
-				c.error('type mismatch, should use `fn(a ${elem_sym.name}) T {...}`',
+				c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) T {...}`',
 					arg_expr.decl.pos)
 			} else if !is_map && (arg_expr.decl.return_type != ast.bool_type
 				|| arg_expr.decl.params[0].typ != elem_typ) {
-				c.error('type mismatch, should use `fn(a ${elem_sym.name}) bool {...}`',
+				c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) bool {...}`',
 					arg_expr.decl.pos)
 			}
 		}
@@ -2991,11 +2998,11 @@ fn (mut c Checker) check_predicate_param(is_map bool, elem_typ ast.Type, node as
 					c.error('function needs exactly 1 argument', node.pos)
 				} else if is_map
 					&& (func.return_type == ast.void_type || func.params[0].typ != elem_typ) {
-					c.error('type mismatch, should use `fn(a ${elem_sym.name}) T {...}`',
+					c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) T {...}`',
 						arg_expr.pos)
 				} else if !is_map
 					&& (func.return_type != ast.bool_type || func.params[0].typ != elem_typ) {
-					c.error('type mismatch, should use `fn(a ${elem_sym.name}) bool {...}`',
+					c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) bool {...}`',
 						arg_expr.pos)
 				}
 			} else if arg_expr.kind == .variable {
@@ -3011,11 +3018,11 @@ fn (mut c Checker) check_predicate_param(is_map bool, elem_typ ast.Type, node as
 							c.error('function needs exactly 1 argument', expr.decl.pos)
 						} else if is_map && (expr.decl.return_type == ast.void_type
 							|| expr.decl.params[0].typ != elem_typ) {
-							c.error('type mismatch, should use `fn(a ${elem_sym.name}) T {...}`',
+							c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) T {...}`',
 								expr.decl.pos)
 						} else if !is_map && (expr.decl.return_type != ast.bool_type
 							|| expr.decl.params[0].typ != elem_typ) {
-							c.error('type mismatch, should use `fn(a ${elem_sym.name}) bool {...}`',
+							c.error('type mismatch, should use `fn(a ${c.table.type_to_str(elem_typ)}) bool {...}`',
 								expr.decl.pos)
 						}
 						return
@@ -3767,11 +3774,9 @@ fn scope_register_var_name(mut s ast.Scope, pos token.Pos, typ ast.Type, name st
 }
 
 // resolve_fn_return_type resolves the generic return type of fn with its related CallExpr
-fn (mut c Checker) resolve_fn_return_type(func &ast.Fn, node ast.CallExpr) ast.Type {
+fn (mut c Checker) resolve_fn_return_type(func &ast.Fn, node ast.CallExpr, concrete_types []ast.Type) ast.Type {
 	mut ret_type := func.return_type
 	if node.is_method {
-		// resolve possible generic types
-		concrete_types := node.concrete_types.map(c.unwrap_generic(it))
 		// generic method being called from a non-generic func
 		if func.generic_names.len > 0 && func.return_type.has_flag(.generic)
 			&& c.table.cur_fn != unsafe { nil } && c.table.cur_fn.generic_names.len == 0 {
@@ -3792,7 +3797,6 @@ fn (mut c Checker) resolve_fn_return_type(func &ast.Fn, node ast.CallExpr) ast.T
 			}
 		}
 	} else {
-		concrete_types := node.concrete_types.map(c.unwrap_generic(it))
 		// generic func called from non-generic func
 		if node.concrete_types.len > 0 && func.return_type != 0 && c.table.cur_fn != unsafe { nil }
 			&& c.table.cur_fn.generic_names.len == 0 {

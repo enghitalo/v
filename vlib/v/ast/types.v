@@ -51,6 +51,8 @@ pub enum Language {
 	arm32 // 32-bit arm
 	rv64  // 64-bit risc-v
 	rv32  // 32-bit risc-v
+	s390x
+	ppc64le
 	wasm32
 }
 
@@ -74,6 +76,12 @@ pub fn pref_arch_to_table_language(pref_arch pref.Arch) Language {
 		}
 		.i386 {
 			.i386
+		}
+		.s390x {
+			.s390x
+		}
+		.ppc64le {
+			.ppc64le
 		}
 		.js_node, .js_browser, .js_freestanding {
 			.js

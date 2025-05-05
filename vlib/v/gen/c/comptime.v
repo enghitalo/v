@@ -472,6 +472,21 @@ fn (mut g Gen) get_expr_type(cond ast.Expr) ast.Type {
 				}
 			}
 		}
+		ast.IntegerLiteral {
+			return ast.int_type
+		}
+		ast.BoolLiteral {
+			return ast.bool_type
+		}
+		ast.StringLiteral {
+			return ast.string_type
+		}
+		ast.CharLiteral {
+			return ast.char_type
+		}
+		ast.FloatLiteral {
+			return ast.f64_type
+		}
 		else {
 			return ast.void_type
 		}
@@ -632,6 +647,21 @@ fn (mut g Gen) comptime_if_cond(cond ast.Expr, pkg_exist bool) (bool, bool) {
 								is_true := match cond.op {
 									.eq { g.comptime.comptime_for_field_type.nr_muls() == cond.right.val.i64() }
 									.ne { g.comptime.comptime_for_field_type.nr_muls() != cond.right.val.i64() }
+									else { false }
+								}
+								if is_true {
+									g.write('1')
+								} else {
+									g.write('0')
+								}
+								return is_true, true
+							} else if g.comptime.comptime_for_method_var != ''
+								&& cond.left.expr is ast.Ident
+								&& cond.left.expr.name == g.comptime.comptime_for_method_var
+								&& cond.left.field_name == 'return_type' {
+								is_true := match cond.op {
+									.eq { g.comptime.comptime_for_method_ret_type.idx() == cond.right.val.i64() }
+									.ne { g.comptime.comptime_for_method_ret_type.idx() != cond.right.val.i64() }
 									else { false }
 								}
 								if is_true {
@@ -987,7 +1017,8 @@ fn (mut g Gen) comptime_for(node ast.ComptimeFor) {
 				g.writeln('/* attribute ${i} */ {')
 				g.writeln('\t${node.val_var}.name = _SLIT("${attr.name}");')
 				g.writeln('\t${node.val_var}.has_arg = ${attr.has_arg};')
-				g.writeln('\t${node.val_var}.arg = _SLIT("${attr.arg}");')
+				g.writeln('\t${node.val_var}.arg = _SLIT("${util.smart_quote(attr.arg,
+					false)}");')
 				g.writeln('\t${node.val_var}.kind = AttributeKind__${attr.kind};')
 				g.stmts(node.stmts)
 				g.writeln('}')
@@ -1109,7 +1140,8 @@ fn (mut g Gen) comptime_selector_type(node ast.SelectorExpr) ast.Type {
 		field_sym := g.table.sym(field.typ)
 		if field_sym.kind in [.sum_type, .interface] {
 			if !prevent_sum_type_unwrapping_once {
-				if scope_field := node.scope.find_struct_field(node.expr.str(), typ, field_name) {
+				scope_field := node.scope.find_struct_field(node.expr.str(), typ, field_name)
+				if scope_field != unsafe { nil } {
 					return scope_field.smartcasts.last()
 				}
 			}
@@ -1278,6 +1310,15 @@ fn (mut g Gen) comptime_if_to_ifdef(name string, is_comptime_option bool) !strin
 		}
 		'rv64', 'riscv64' {
 			return '__V_rv64'
+		}
+		's390x' {
+			return '__V_s390x'
+		}
+		'ppc64le' {
+			return '__V_ppc64le'
+		}
+		'loongarch64' {
+			return '__V_loongarch64'
 		}
 		// bitness:
 		'x64' {

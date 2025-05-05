@@ -967,6 +967,16 @@ fn test_execute_with_linefeeds() {
 	assert result2.exit_code == 1
 }
 
+fn test_execute_fc_get_output() {
+	if os.user_os() != 'windows' {
+		return
+	}
+	result := os.execute('c:\\windows\\system32\\fc.exe /?')
+	dump(result)
+	assert result.output.contains('filename')
+	assert result.exit_code == -1
+}
+
 fn test_command() {
 	if os.user_os() == 'windows' {
 		eprintln('>>> os.Command is not implemented fully on Windows yet')
@@ -1013,7 +1023,8 @@ fn test_reading_from_proc_cpuinfo() {
 	info := os.read_file('/proc/cpuinfo')!
 	assert info.len > 0
 	assert info.contains('processor')
-	assert info.ends_with('\n\n')
+	// dump(info)
+	// assert info.ends_with('\n\n') // fails on QEMU for s390x
 
 	info_bytes := os.read_bytes('/proc/cpuinfo')!
 	assert info_bytes.len > 0

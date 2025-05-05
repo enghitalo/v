@@ -173,6 +173,19 @@ pub fn (mut t TypeResolver) resolve_args(cur_fn &ast.FnDecl, func &ast.Fn, mut n
 									ctyp = t.resolver.unwrap_generic(arg_sym.info.value_type)
 								}
 							}
+						} else if arg_sym.kind == .any {
+							cparam_type_sym := t.table.sym(t.resolver.unwrap_generic(ctyp))
+							if param_sym.info is ast.Map && cparam_type_sym.info is ast.Map {
+								if param_sym.info.key_type.has_flag(.generic) {
+									comptime_args[k] = cparam_type_sym.info.key_type
+									if param_sym.info.value_type.has_flag(.generic) {
+										k++
+										ctyp = cparam_type_sym.info.value_type
+									}
+								} else if param_sym.info.value_type.has_flag(.generic) {
+									ctyp = cparam_type_sym.info.value_type
+								}
+							}
 						}
 						comptime_args[k] = ctyp
 					}
@@ -275,7 +288,8 @@ pub fn (mut t TypeResolver) resolve_args(cur_fn &ast.FnDecl, func &ast.Fn, mut n
 			arg_sym := t.table.final_sym(call_arg.typ)
 			param_sym := t.table.sym(param_typ)
 			if arg_sym.kind == .array && param_sym.kind == .array {
-				comptime_args[k] = t.get_generic_array_element_type(arg_sym.info as ast.Array)
+				comptime_sym := t.table.sym(comptime_args[k])
+				comptime_args[k] = t.get_generic_array_element_type(comptime_sym.info as ast.Array)
 			} else if arg_sym.info is ast.Map && param_sym.info is ast.Map {
 				comptime_sym := t.table.sym(comptime_args[k])
 				if comptime_sym.info is ast.Map {

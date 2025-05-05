@@ -21,7 +21,7 @@ pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.Que
 	metadata := stmt.gen_metadata()
 	fields := stmt.fetch_fields(metadata)
 	num_fields := stmt.get_field_count()
-	mut data_pointers := []&u8{}
+	mut data_pointers := []&u8{cap: int(num_fields)}
 
 	// Allocate memory for each column.
 	for i in 0 .. num_fields {
@@ -45,7 +45,7 @@ pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.Que
 			.type_string, .type_var_string, .type_blob, .type_tiny_blob, .type_medium_blob,
 			.type_long_blob {
 				// Memory will be allocated later dynamically depending on the length of the value.
-				data_pointers << &u8(0)
+				data_pointers << &u8(unsafe { nil })
 			}
 			else {
 				return error('\'${unsafe { FieldType(field.type) }}\' is not yet implemented. Please create a new issue at https://github.com/vlang/v/issues/new')
@@ -53,8 +53,9 @@ pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.Que
 		}
 	}
 
-	lengths := []u32{len: int(num_fields), init: 0}
-	stmt.bind_res(fields, data_pointers, lengths, num_fields)
+	mut lengths := []u32{len: int(num_fields), init: 0}
+	mut is_null := []bool{len: int(num_fields)}
+	stmt.bind_res(fields, data_pointers, lengths, is_null, num_fields)
 
 	mut types := config.types.clone()
 	mut field_types := []FieldType{}
@@ -71,25 +72,18 @@ pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.Que
 		field_type := unsafe { FieldType(field.type) }
 		field_types << field_type
 
-		match types[i] {
-			orm.type_string {
+		match field_type {
+			.type_string, .type_var_string, .type_blob, .type_tiny_blob, .type_medium_blob,
+			.type_long_blob {
 				string_binds_map[i] = mysql_bind
 			}
-			orm.time_ {
-				match field_type {
-					.type_long {
-						mysql_bind.buffer_type = C.MYSQL_TYPE_LONG
-					}
-					.type_time, .type_date, .type_datetime, .type_timestamp {
-						// FIXME: Allocate memory for blobs dynamically.
-						mysql_bind.buffer_type = C.MYSQL_TYPE_BLOB
-						mysql_bind.buffer_length = FieldType.type_blob.get_len()
-					}
-					.type_string, .type_blob {}
-					else {
-						return error('Unknown type ${field.type}')
-					}
-				}
+			.type_long {
+				mysql_bind.buffer_type = C.MYSQL_TYPE_LONG
+			}
+			.type_time, .type_date, .type_datetime, .type_timestamp {
+				// FIXME: Allocate memory for blobs dynamically.
+				mysql_bind.buffer_type = C.MYSQL_TYPE_BLOB
+				mysql_bind.buffer_length = FieldType.type_blob.get_len()
 			}
 			else {}
 		}
@@ -119,7 +113,7 @@ pub fn (db DB) select(config orm.SelectConfig, data orm.QueryData, where orm.Que
 			stmt.fetch_column(bind, index)!
 		}
 
-		result << data_pointers_to_primitives(data_pointers, types, field_types)!
+		result << data_pointers_to_primitives(is_null, data_pointers, types, field_types)!
 	}
 
 	stmt.close()!
@@ -258,67 +252,70 @@ fn stmt_bind_primitive(mut stmt Stmt, data orm.Primitive) {
 
 // data_pointers_to_primitives returns an array of `Primitive`
 // cast from `data_pointers` using `types`.
-fn data_pointers_to_primitives(data_pointers []&u8, types []int, field_types []FieldType) ![]orm.Primitive {
+fn data_pointers_to_primitives(is_null []bool, data_pointers []&u8, types []int, field_types []FieldType) ![]orm.Primitive {
 	mut result := []orm.Primitive{}
 
 	for i, data in data_pointers {
 		mut primitive := orm.Primitive(0)
-		match types[i] {
-			orm.type_idx['i8'] {
-				primitive = *(unsafe { &i8(data) })
-			}
-			orm.type_idx['i16'] {
-				primitive = *(unsafe { &i16(data) })
-			}
-			orm.type_idx['int'], orm.serial {
-				primitive = *(unsafe { &int(data) })
-			}
-			orm.type_idx['i64'] {
-				primitive = *(unsafe { &i64(data) })
-			}
-			orm.type_idx['u8'] {
-				primitive = *(unsafe { &u8(data) })
-			}
-			orm.type_idx['u16'] {
-				primitive = *(unsafe { &u16(data) })
-			}
-			orm.type_idx['u32'] {
-				primitive = *(unsafe { &u32(data) })
-			}
-			orm.type_idx['u64'] {
-				primitive = *(unsafe { &u64(data) })
-			}
-			orm.type_idx['f32'] {
-				primitive = *(unsafe { &f32(data) })
-			}
-			orm.type_idx['f64'] {
-				primitive = *(unsafe { &f64(data) })
-			}
-			orm.type_idx['bool'] {
-				primitive = *(unsafe { &bool(data) })
-			}
-			orm.type_string {
-				primitive = unsafe { cstring_to_vstring(&char(data)) }
-			}
-			orm.time_ {
-				match field_types[i] {
-					.type_long {
-						timestamp := *(unsafe { &int(data) })
-						primitive = time.unix(timestamp)
+		if !is_null[i] {
+			match types[i] {
+				orm.type_idx['i8'] {
+					primitive = *(unsafe { &i8(data) })
+				}
+				orm.type_idx['i16'] {
+					primitive = *(unsafe { &i16(data) })
+				}
+				orm.type_idx['int'], orm.serial {
+					primitive = *(unsafe { &int(data) })
+				}
+				orm.type_idx['i64'] {
+					primitive = *(unsafe { &i64(data) })
+				}
+				orm.type_idx['u8'] {
+					primitive = *(unsafe { &u8(data) })
+				}
+				orm.type_idx['u16'] {
+					primitive = *(unsafe { &u16(data) })
+				}
+				orm.type_idx['u32'] {
+					primitive = *(unsafe { &u32(data) })
+				}
+				orm.type_idx['u64'] {
+					primitive = *(unsafe { &u64(data) })
+				}
+				orm.type_idx['f32'] {
+					primitive = *(unsafe { &f32(data) })
+				}
+				orm.type_idx['f64'] {
+					primitive = *(unsafe { &f64(data) })
+				}
+				orm.type_idx['bool'] {
+					primitive = *(unsafe { &bool(data) })
+				}
+				orm.type_string {
+					primitive = unsafe { cstring_to_vstring(&char(data)) }
+				}
+				orm.time_ {
+					match field_types[i] {
+						.type_long {
+							timestamp := *(unsafe { &int(data) })
+							primitive = time.unix(timestamp)
+						}
+						.type_datetime, .type_timestamp {
+							primitive = time.parse(unsafe { cstring_to_vstring(&char(data)) })!
+						}
+						else {}
 					}
-					.type_datetime, .type_timestamp {
-						string_time := unsafe { cstring_to_vstring(&char(data)) }
-						primitive = time.parse(string_time)!
-					}
-					else {}
+				}
+				orm.enum_ {
+					primitive = *(unsafe { &i64(data) })
+				}
+				else {
+					return error('Unknown type ${types[i]}')
 				}
 			}
-			orm.enum_ {
-				primitive = *(unsafe { &i64(data) })
-			}
-			else {
-				return error('Unknown type ${types[i]}')
-			}
+		} else {
+			primitive = orm.Null{}
 		}
 		result << primitive
 	}

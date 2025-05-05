@@ -13,6 +13,7 @@ mut:
 	buffer        voidptr
 	buffer_length u32
 	length        &u32
+	is_null       &bool
 }
 
 const mysql_type_decimal = C.MYSQL_TYPE_DECIMAL
@@ -46,7 +47,7 @@ const mysql_type_geometry = C.MYSQL_TYPE_GEOMETRY
 const mysql_no_data = C.MYSQL_NO_DATA
 
 fn C.mysql_stmt_init(&C.MYSQL) &C.MYSQL_STMT
-fn C.mysql_stmt_prepare(&C.MYSQL_STMT, &char, u32) int
+fn C.mysql_stmt_prepare(&C.MYSQL_STMT, const_query charptr, u32) int
 fn C.mysql_stmt_bind_param(&C.MYSQL_STMT, &C.MYSQL_BIND) bool
 fn C.mysql_stmt_execute(&C.MYSQL_STMT) int
 fn C.mysql_stmt_close(&C.MYSQL_STMT) bool
@@ -85,7 +86,7 @@ pub fn (db DB) init_stmt(query string) Stmt {
 
 // prepare a statement for execution.
 pub fn (stmt Stmt) prepare() ! {
-	result := C.mysql_stmt_prepare(stmt.stmt, stmt.query.str, stmt.query.len)
+	result := C.mysql_stmt_prepare(stmt.stmt, charptr(stmt.query.str), stmt.query.len)
 
 	if result != 0 && stmt.get_error_msg() != '' {
 		return stmt.error(result)
@@ -250,6 +251,7 @@ pub fn (mut stmt Stmt) bind_null() {
 	stmt.binds << C.MYSQL_BIND{
 		buffer_type: mysql_type_null
 		length:      0
+		is_null:     0
 	}
 }
 
@@ -261,16 +263,18 @@ pub fn (mut stmt Stmt) bind(typ int, buffer voidptr, buf_len u32) {
 		buffer:        buffer
 		buffer_length: buf_len
 		length:        0
+		is_null:       0
 	}
 }
 
 // bind_res will store one result in the statement `stmt`
-pub fn (mut stmt Stmt) bind_res(fields &C.MYSQL_FIELD, dataptr []&u8, lengths []u32, num_fields int) {
+pub fn (mut stmt Stmt) bind_res(fields &C.MYSQL_FIELD, dataptr []&u8, lengths []u32, is_null []bool, num_fields int) {
 	for i in 0 .. num_fields {
 		stmt.res << C.MYSQL_BIND{
 			buffer_type: unsafe { fields[i].type }
 			buffer:      dataptr[i]
 			length:      &lengths[i]
+			is_null:     &is_null[i]
 		}
 	}
 }

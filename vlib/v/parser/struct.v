@@ -213,11 +213,18 @@ fn (mut p Parser) struct_decl(is_anon bool) ast.StructDecl {
 			mut option_pos := token.Pos{}
 
 			if p.tok.kind == .rcbr {
-				ast_fields.last().next_comments << pre_field_comments
+				if ast_fields.len > 0 {
+					ast_fields.last().next_comments << pre_field_comments
+				}
 				break
 			}
 
 			if is_embed {
+				if p.peek_tok.kind == .dot && p.peek_tok.line_nr == p.peek_token(3).line_nr
+					&& p.peek_token(3).kind == .name {
+					p.error_with_pos('invalid field name', p.tok.pos())
+					return ast.StructDecl{}
+				}
 				// struct embedding
 				type_pos = p.tok.pos()
 				typ = p.parse_type()

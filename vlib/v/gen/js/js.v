@@ -561,7 +561,7 @@ fn (mut g JsGen) js_name(name_ string) string {
 		name = name[3..]
 		return name
 	}
-	name = name_.replace('.', '__')
+	name = name_.replace('[]', '').replace('.', '__')
 	if name in js_reserved {
 		return '_v_${name}'
 	}
@@ -1945,6 +1945,8 @@ fn (mut g JsGen) gen_struct_decl(node ast.StructDecl) {
 
 				if field.has_default_expr {
 					g.expr(field.default_expr)
+				} else if field.typ.has_flag(.option) {
+					g.write('none__')
 				} else {
 					g.write('${g.to_js_typ_val(field.typ)}')
 				}
@@ -2511,6 +2513,12 @@ fn (mut g JsGen) match_expr_sumtype(node ast.MatchExpr, is_expr bool, cond_var M
 						if tsym.language == .js && (tsym.name == 'JS.Number'
 							|| tsym.name == 'JS.Boolean' || tsym.name == 'JS.String') {
 							g.write(' === "${tsym.name[3..].to_lower_ascii()}"')
+						} else if tsym.kind == .array {
+							g.write(' && ')
+							g.match_cond(cond_var)
+							g.write('.arr.arr.every(x => x instanceof ')
+							g.expr(branch.exprs[sumtype_index])
+							g.write(')')
 						} else {
 							g.write(' instanceof ')
 							g.expr(branch.exprs[sumtype_index])
