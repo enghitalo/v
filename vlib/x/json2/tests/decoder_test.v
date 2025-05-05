@@ -19,7 +19,7 @@ fn test_raw_decode_number() {
 }
 
 fn test_raw_decode_array() {
-	raw_arr := json.raw_decode['["Foo"](1]')!
+	raw_arr := json.raw_decode('["Foo", 1]')!
 	arr := raw_arr.arr()
 	assert arr[0] or { 0 }.str() == 'Foo'
 	assert arr[1] or { 0 }.int() == 1
@@ -77,7 +77,7 @@ fn test_raw_decode_map_invalid() {
 }
 
 fn test_raw_decode_array_invalid() {
-	json.raw_decode['["Foo"](1,}') or {
+	json.raw_decode('["Foo"](1,}') or {
 		assert err.msg() == '[x.json2] invalid token `rcbr` (0:5)'
 		return
 	}

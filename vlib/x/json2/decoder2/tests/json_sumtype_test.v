@@ -1,4 +1,4 @@
-import x.json2.decoder2 as json
+import x.json2.decoder2
 import x.json2
 
 type Prices = Price | []Price
@@ -64,14 +64,15 @@ fn test_any_sum_type() {
 
 	assert decoder2.decode[json2.Any]('1.1')! == json2.Any(f64(1.1))
 
-	assert decoder2.decode[[]json2.Any]('["1", "2", "3"]')! == [json2.Any('1'), json2.Any('2'), json2.Any('3')]
+	assert decoder2.decode[[]json2.Any]('["1", "2", "3"]')! == [json2.Any('1'), json2.Any('2'),
+		json2.Any('3')]
 	assert decoder2.decode[json2.Any]('["1", "2", "3"]')! == json2.Any([json2.Any('1'), json2.Any('2'),
 		json2.Any('3')])
 
 	assert decoder2.decode[[]json2.Any]('[true, false, true]')! == [json2.Any(true), json2.Any(false),
 		json2.Any(true)]
-	assert decoder2.decode[json2.Any]('[true, false, true]')! == json2.Any([json2.Any(true), json2.Any(false),
-		json2.Any(true)])
+	assert decoder2.decode[json2.Any]('[true, false, true]')! == json2.Any([json2.Any(true),
+		json2.Any(false), json2.Any(true)])
 
 	assert decoder2.decode[json2.Any]('{"hello": "world"}')! == json2.Any({
 		'hello': json2.Any('world')

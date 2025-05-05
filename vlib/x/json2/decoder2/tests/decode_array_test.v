@@ -1,4 +1,4 @@
-import x.json2.decoder2 as json
+import x.json2.decoder2
 
 struct StructType[T] {
 mut:

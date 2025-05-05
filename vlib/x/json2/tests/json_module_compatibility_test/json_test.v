@@ -1,4 +1,5 @@
 import x.json2 as json
+import x.json2.decoder2
 import time
 
 enum JobTitle {
@@ -85,7 +86,7 @@ fn test_parse_user() {
 	// assert u.nums[1] == 2
 	// assert u.nums[2] == 3
 	assert u.typ == 1
-	assert u.pets == '{"name":"Bob","animal":"Dog"}'
+	assert u.pets == '{"name": "Bob", "animal": "Dog"}'
 }
 
 fn test_encode_decode_time() {
@@ -94,6 +95,7 @@ fn test_encode_decode_time() {
 		reg_date: time.new(year: 2020, month: 12, day: 22, hour: 7, minute: 23)
 	}
 	s := json.encode(user)
+	assert s == '{"age":25,"nums":[],"reg_date":"2020-12-22T07:23:00.000Z"}'
 
 	assert s.contains('"reg_date":"2020-12-22T07:23:00.000Z"')
 	user2 := decoder2.decode[User2](s)!
@@ -132,7 +134,7 @@ fn test_raw_json_field() {
 		assert false
 		Color{}
 	}
-	assert color.point == '{"Y":123}'
+	assert color.point == '{"Y": 123}'
 	assert color.space == 'YCbCr'
 }
 

@@ -1,6 +1,6 @@
 module main
 
-import x.json2 as json
+import x.json2.decoder2
 import x.json2
 
 pub struct Data {

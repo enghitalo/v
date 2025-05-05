@@ -1,4 +1,4 @@
-import x.json2.decoder2 as json
+import x.json2.decoder2
 import time
 
 const fixed_time = time.new(
