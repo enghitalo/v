@@ -15,7 +15,7 @@ mut:
 fn test_json_decode_fails_to_decode_unrecognised_array_of_dicts() {
 	data := '[{"twins":[{"id":123,"seed":"abcde","pubkey":"xyzasd"},{"id":456,"seed":"dfgdfgdfgd","pubkey":"skjldskljh45sdf"}]}]'
 	decoder2.decode[TestTwins](data) or {
-		assert err.msg() == "expected field 'twins' is missing"
+		assert err.msg() == 'Expected object, but got array'
 		return
 	}
 	assert false
@@ -24,7 +24,7 @@ fn test_json_decode_fails_to_decode_unrecognised_array_of_dicts() {
 fn test_json_decode_works_with_a_dict_of_arrays() {
 	data := '{"twins":[{"id":123,"seed":"abcde","pubkey":"xyzasd"},{"id":456,"seed":"dfgdfgdfgd","pubkey":"skjldskljh45sdf"}]}'
 	res := decoder2.decode[TestTwins](data) or {
-		assert false
+		assert false, err.msg()
 		exit(1)
 	}
 	assert res.twins[0].id == 123
@@ -91,7 +91,7 @@ struct DbConfig {
 
 fn test_decode_error_message_should_have_enough_context_empty() {
 	decoder2.decode[DbConfig]('') or {
-		assert err.msg() == 'failed to decode JSON string'
+		assert err.msg() == 'empty string'
 		return
 	}
 	assert false
@@ -99,7 +99,8 @@ fn test_decode_error_message_should_have_enough_context_empty() {
 
 fn test_decode_error_message_should_have_enough_context_just_brace() {
 	decoder2.decode[DbConfig]('{') or {
-		assert err.msg() == 'failed to decode JSON string: {'
+		// dump(json.encode(err.msg()))
+		assert err.msg() == '\n{\n^ EOF error: expecting a complete object after `{`'
 		return
 	}
 	assert false
@@ -112,7 +113,8 @@ fn test_decode_error_message_should_have_enough_context_trailing_comma_at_end() 
     "user": "alex",
 }'
 	decoder2.decode[DbConfig](txt) or {
-		assert err.msg().contains('    "user": "alex",\n}')
+		// dump(json.encode(err.msg()))
+		assert err.msg() == '\n\n}\n ^ Expecting object key after `,`'
 		return
 	}
 	assert false
@@ -121,7 +123,8 @@ fn test_decode_error_message_should_have_enough_context_trailing_comma_at_end() 
 fn test_decode_error_message_should_have_enough_context_in_the_middle() {
 	txt := '{"host": "localhost", "dbname": "alex" "user": "alex", "port": "1234"}'
 	decoder2.decode[DbConfig](txt) or {
-		assert err.msg().contains('ost", "dbname": "alex" "user":')
+		// dump(json.encode(err.msg()))
+		assert err.msg() == '\n{"host": "localhost", "dbname": "alex" "\n                                       ^ invalid value. Unexpected character after string_ end'
 		return
 	}
 	assert false
