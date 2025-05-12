@@ -77,7 +77,7 @@ fn test_raw_decode_map_invalid() {
 }
 
 fn test_raw_decode_array_invalid() {
-	json.raw_decode('["Foo"](1,}') or {
+	json.raw_decode('["Foo", 1,}') or {
 		assert err.msg() == '[x.json2] invalid token `rcbr` (0:5)'
 		return
 	}
