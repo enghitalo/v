@@ -1612,6 +1612,12 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 				c.error('cannot use `${got_typ_str}` as `${expected_typ_str}` in argument ${i + 1} to `${fn_name}`',
 					call_arg.pos)
 			}
+			if call_arg.expr is ast.ArrayDecompose && arg_typ.idx() != final_param_typ.idx() {
+				expected_type_str := c.table.type_to_str(param.typ)
+				got_type_str := c.table.type_to_str(arg_typ)
+				c.error('cannot use `${got_type_str}` as `${expected_type_str}` in argument ${i + 1} to `${fn_name}`',
+					call_arg.pos)
+			}
 			continue
 		}
 		if param.typ.is_ptr() && !param.is_mut && !call_arg.typ.is_any_kind_of_pointer()
@@ -1844,6 +1850,12 @@ fn (mut c Checker) fn_call(mut node ast.CallExpr, mut continue_check &bool) ast.
 						if mut call_arg.expr is ast.LambdaExpr {
 							// Calling fn is generic and lambda arg also is generic
 							c.handle_generic_lambda_arg(node, mut call_arg.expr)
+							continue
+						}
+						// passing []?T to []T
+						if !unwrap_typ.has_flag(.variadic) && unwrap_sym.kind == .array
+							&& c.table.final_sym(utyp).kind == .array
+							&& c.check_basic(c.table.value_type(utyp).clear_flag(.option), c.table.value_type(unwrap_typ)) {
 							continue
 						}
 						c.error('${err.msg()} in argument ${i + 1} to `${fn_name}`', call_arg.pos)
@@ -2600,6 +2612,12 @@ fn (mut c Checker) method_call(mut node ast.CallExpr, mut continue_check &bool) 
 					&& param_elem_type == arg_elem_type {
 					continue
 				}
+			}
+			// passing []?T to []T
+			if !exp_arg_typ.has_flag(.variadic) && param_typ_sym.kind == .array
+				&& c.table.final_sym(got_arg_typ).kind == .array
+				&& c.check_basic(c.table.value_type(got_arg_typ).clear_flag(.option), c.table.value_type(exp_arg_typ)) {
+				continue
 			}
 			c.error('${err.msg()} in argument ${i + 1} to `${left_sym.name}.${method_name}`',
 				arg.pos)

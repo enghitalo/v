@@ -2700,7 +2700,6 @@ fn (mut g Gen) write_sumtype_casting_fn(fun SumtypeCastingFn) {
 	mut got_cname, exp_cname := g.get_sumtype_variant_type_name(got, got_sym), exp_sym.cname
 	mut type_idx := g.type_sidx(got)
 	mut sb := strings.new_builder(128)
-	mut is_anon_fn := false
 	mut variant_name := g.get_sumtype_variant_name(got, got_sym)
 	if got_sym.info is ast.FnType {
 		got_name := 'fn ${g.table.fn_type_source_signature(got_sym.info.func)}'
@@ -2720,9 +2719,7 @@ fn (mut g Gen) write_sumtype_casting_fn(fun SumtypeCastingFn) {
 		}
 		sb.writeln('static inline ${exp_cname} ${fun.fn_name}(${got_cname} x) {')
 		sb.writeln('\t${got_cname} ptr = x;')
-		is_anon_fn = true
-	}
-	if !is_anon_fn {
+	} else {
 		// g.definitions.writeln('${g.static_modifier} inline ${exp_cname} ${fun.fn_name}(${got_cname}* x);')
 		// sb.writeln('${g.static_modifier} inline ${exp_cname} ${fun.fn_name}(${got_cname}* x) {')
 		g.definitions.writeln('${exp_cname} ${fun.fn_name}(${got_cname}* x);')
@@ -2786,6 +2783,9 @@ fn (mut g Gen) call_cfn_for_casting_expr(fname string, expr ast.Expr, exp ast.Ty
 			g.write('&(${exp_styp.trim_right('*')}){._${got_styp.trim_right('*')}=')
 			rparen_n = 0
 			mutable_idx = got.idx()
+		} else if expr is ast.UnsafeExpr && expr.expr is ast.Nil {
+			g.write('(void*)0')
+			return
 		} else {
 			g.write('HEAP(${exp_styp}, ${fname}(')
 			rparen_n++
@@ -3155,7 +3155,7 @@ fn (mut g Gen) asm_stmt(stmt ast.AsmStmt) {
 		}
 		// swap destination and operands for att syntax, not for arm64
 		if template.args.len != 0 && !template.is_directive && stmt.arch != .arm64
-			&& stmt.arch != .s390x && stmt.arch != .ppc64le {
+			&& stmt.arch != .s390x && stmt.arch != .ppc64le && stmt.arch != .loongarch64 {
 			template.args.prepend(template.args.last())
 			template.args.delete(template.args.len - 1)
 		}
@@ -3232,7 +3232,7 @@ fn (mut g Gen) asm_arg(arg ast.AsmArg, stmt ast.AsmStmt) {
 		ast.IntegerLiteral {
 			if stmt.arch == .arm64 {
 				g.write('#${arg.val}')
-			} else if stmt.arch == .s390x || stmt.arch == .ppc64le {
+			} else if stmt.arch == .s390x || stmt.arch == .ppc64le || stmt.arch == .loongarch64 {
 				g.write('${arg.val}')
 			} else {
 				g.write('\$${arg.val}')
@@ -3249,10 +3249,14 @@ fn (mut g Gen) asm_arg(arg ast.AsmArg, stmt ast.AsmStmt) {
 			g.write('\$${arg.val.str()}')
 		}
 		ast.AsmRegister {
-			if !stmt.is_basic {
-				g.write('%') // escape percent with percent in extended assembly
+			if stmt.arch == .loongarch64 {
+				g.write('$${arg.name}')
+			} else {
+				if !stmt.is_basic {
+					g.write('%') // escape percent with percent in extended assembly
+				}
+				g.write('%${arg.name}')
 			}
-			g.write('%${arg.name}')
 		}
 		ast.AsmAddressing {
 			if arg.segment != '' {
