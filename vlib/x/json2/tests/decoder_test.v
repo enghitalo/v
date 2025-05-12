@@ -123,7 +123,7 @@ fn test_decode_missing_comma() {
 				}
 			}'
 	user := decoder2.decode[User](data) or {
-		assert err.msg().contains('invalid token')
+		assert err.msg().contains('invalid value. Unexpected character after number end')
 		return
 	}
 }
