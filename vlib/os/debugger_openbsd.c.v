@@ -6,23 +6,28 @@ fn C.ptrace(int, u32, voidptr, int) int
 
 // debugger_present returns a bool indicating if the process is being debugged
 pub fn debugger_present() bool {
-	$if freebsd {
+	$if openbsd {
 		// check if a child process could trace its parent process,
 		// if not a debugger must be present
 		pid := fork()
 		if pid == 0 {
 			ppid := getppid()
-			if C.ptrace(C.PT_TRACE_ME, ppid, unsafe { nil }, 0) == 0 {
-				C.waitpid(ppid, 0, 0)
-
-				// detach ptrace, otherwise further checks would indicate a debugger is present (ptrace is the Debugger then)
-				C.ptrace(C.PT_DETACH, ppid, 0, 0)
-
-				// no external debugger
-				exit(0)
-			} else {
-				// an error occurred, a external debugger must be present
-				exit(1)
+			/*
+			 * On OpenBSD, impossible to trace a parent process from its child.
+			 * Possible errors:
+			 *   - EBUSY: process already traced
+			 *   - EPERM: process is not a child of tracer (sysctl kern.global_ptrace=0)
+			 *   - EINVAL: process is an ancestor of the current process and not init
+			 *     (sysctl kern.global_ptrace=1)
+			 */
+			if C.ptrace(C.PT_ATTACH, ppid, unsafe { nil }, 0) < 0 {
+				if C.errno == C.EBUSY {
+					// external debugger must be present
+					exit(1)
+				} else {
+					// no external debugger
+					exit(0)
+				}
 			}
 		} else {
 			mut status := 0
