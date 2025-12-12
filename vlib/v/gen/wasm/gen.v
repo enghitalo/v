@@ -645,14 +645,14 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 			if has_str || typ.is_pure_int() || typ.is_pure_float() || typ == ast.bool_type {
 				// Generate a call to str() method
 				call_expr := ast.CallExpr{
-					name:           'str'
-					left:           expr
-					left_type:      typ
-					receiver_type:  typ
-					return_type:    ast.string_type
-					is_method:      true
-					is_return_used: true
-					args:           []ast.CallArg{}
+					name:               'str'
+					left:               expr
+					left_type:          typ
+					receiver_type:      typ
+					return_type:        ast.string_type
+					is_method:          true
+					is_return_used:     true
+					args:               []ast.CallArg{}
 					expected_arg_types: []ast.Type{}
 				}
 				g.call_expr(call_expr, ast.string_type, [])

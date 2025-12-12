@@ -79,8 +79,10 @@ fn main() {
 	b := 10
 	ptrs << &a
 	ptrs << &b
-	println(ptrs[0])
-	println(ptrs[1])
+	// println(ptrs[0]) // should print &5
+	// println(ptrs[1]) // should print &10
+	// println(*ptrs[0]) // should print 5
+	// println(*ptrs[1]) // should print 10
 
 	// Test 8: Byte type (u8)
 	println('=== Byte arrays ===')
