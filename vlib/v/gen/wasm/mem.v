@@ -740,7 +740,83 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 		}
 		ast.ArrayInit {
 			if !init.is_fixed {
-				g.v_error('wasm backend does not support non fixed arrays yet', init.pos)
+				// Dynamic array initialization
+				// For now, we'll manually construct the array struct
+				// instead of calling __new_array (which may not be available)
+				elm_typ := init.elem_type
+				elm_size, _ := g.pool.type_size(elm_typ)
+				
+				// Calculate array length
+				arr_len := init.exprs.len
+				
+				// Allocate data for array elements if needed
+				if arr_len > 0 {
+					// Allocate memory for data: len * element_size
+					total_size := arr_len * elm_size
+					g.literalint(total_size, ast.int_type)
+					g.func.call('vcalloc')  // Returns pointer to zeroed memory
+					
+					// Store data pointer temporarily
+					data_ptr := g.func.new_local_named(.i32_t, '__tmp<array_data>')
+					g.func.local_tee(data_ptr)
+					
+					// Populate the data
+					for i, e in init.exprs {
+						g.func.local_get(data_ptr)
+						if i > 0 {
+							if elm_size > 1 {
+								g.literalint(i * elm_size, ast.int_type)
+							} else {
+								g.literalint(i, ast.int_type)
+							}
+							g.func.add(.i32_t)
+						}
+						
+						g.expr(e, elm_typ)
+						g.store(elm_typ, 0)
+					}
+					
+					// Now build the array struct on stack
+					// Store data pointer (offset 0)
+					g.get(v)
+					g.func.local_get(data_ptr)
+					g.store(ast.voidptr_type, 0)
+					
+					// Store offset = 0 (offset 4)
+					g.get(v)
+					g.literalint(0, ast.int_type)
+					g.store(ast.int_type, 4)
+					
+					// Store len (offset 8)
+					g.get(v)
+					g.literalint(arr_len, ast.int_type)
+					g.store(ast.int_type, 8)
+					
+					// Store cap (offset 12)
+					g.get(v)
+					g.literalint(arr_len, ast.int_type)
+					g.store(ast.int_type, 12)
+					
+					// Store flags = 0 (offset 16)
+					g.get(v)
+					g.literalint(0, ast.int_type)
+					g.store(ast.int_type, 16)
+					
+					// Store element_size (offset 20)
+					g.get(v)
+					g.literalint(elm_size, ast.int_type)
+					g.store(ast.int_type, 20)
+				} else {
+					// Empty array - zero out the struct
+					arr_size, _ := g.pool.type_size(v.typ)
+					g.zero_fill(v, arr_size)
+					
+					// Still need to set element_size
+					g.get(v)
+					g.literalint(elm_size, ast.int_type)
+					g.store(ast.int_type, 20)
+				}
+				return
 			}
 
 			elm_typ := init.elem_type

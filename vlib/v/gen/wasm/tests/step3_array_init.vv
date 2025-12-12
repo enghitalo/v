@@ -1,0 +1,23 @@
+// Step 3: Test array initialization
+// This tests creating arrays with __new_array() and literal initialization
+
+fn test_empty_array() {
+	_ := []int{}
+	println('Empty array created')
+}
+
+fn test_array_with_literals() {
+	a := [10, 20, 30]
+	println('Array with literals')
+	println(a[0])
+	println(a[1])
+	println(a[2])
+}
+
+fn main() {
+	println('Step 3: Array initialization test')
+	test_empty_array()
+	test_array_with_literals()
+	println('Initialization OK')
+}
+
