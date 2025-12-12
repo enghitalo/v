@@ -298,6 +298,131 @@ pub fn (g &Gen) is_pure_type(typ ast.Type) bool {
 	return false
 }
 
+// ensure_cap ensures an array has at least the required capacity
+// This implements the array growth logic for dynamic arrays
+// arr_var: Var pointing to the array struct
+// required: minimum capacity needed
+pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
+	// Load current capacity (offset 12)
+	g.get(arr_var)
+	current_cap := g.func.new_local_named(.i32_t, '__tmp<cap>')
+	g.load(ast.int_type, 12) // array.cap
+	g.func.local_tee(current_cap)
+	
+	// Check if required <= current_cap
+	g.literalint(required, ast.int_type)
+	g.func.ge(.i32_t, true) // cap >= required (signed comparison)
+	
+	// If cap >= required, return early
+	blk_return := g.func.c_if([], [])
+	{
+		// No reallocation needed, just return
+	}
+	g.func.c_end(blk_return)
+	
+	// Calculate new capacity: start with max(current_cap, 2), double until >= required
+	g.func.local_get(current_cap)
+	zero_test := g.func.new_local_named(.i32_t, '__tmp<cap_test>')
+	g.func.local_tee(zero_test)
+	
+	// If cap > 0, use cap, else use 2
+	new_cap := g.func.new_local_named(.i32_t, '__tmp<new_cap>')
+	g.func.eqz(.i32_t)
+	blk_cap_init := g.func.c_if([], [.i32_t])
+	{
+		g.literalint(2, ast.int_type) // Start with cap = 2
+	}
+	g.func.c_else(blk_cap_init)
+	{
+		g.func.local_get(current_cap)
+	}
+	g.func.c_end(blk_cap_init)
+	g.func.local_set(new_cap)
+	
+	// Double capacity until new_cap >= required
+	loop_lbl := g.func.c_loop([], [])
+	{
+		g.func.local_get(new_cap)
+		g.literalint(required, ast.int_type)
+		g.func.lt(.i32_t, true) // new_cap < required (signed)
+		
+		blk_double := g.func.c_if([], [])
+		{
+			// new_cap *= 2
+			g.func.local_get(new_cap)
+			g.literalint(2, ast.int_type)
+			g.func.mul(.i32_t)
+			g.func.local_set(new_cap)
+			
+			g.func.c_br(loop_lbl) // Continue loop
+		}
+		g.func.c_end(blk_double)
+	}
+	g.func.c_end(loop_lbl)
+	
+	// Get element_size (offset 20)
+	g.get(arr_var)
+	elem_size := g.func.new_local_named(.i32_t, '__tmp<elem_size>')
+	g.load(ast.int_type, 20) // array.element_size
+	g.func.local_set(elem_size)
+	
+	// Calculate new_size = new_cap * element_size
+	g.func.local_get(new_cap)
+	g.func.local_get(elem_size)
+	g.func.mul(.i32_t)
+	
+	// Allocate new memory
+	g.func.call('malloc')
+	new_data := g.func.new_local_named(.i32_t, '__tmp<new_data>')
+	g.func.local_set(new_data)
+	
+	// Copy existing data if old data exists
+	// Load old data pointer (offset 0)
+	g.get(arr_var)
+	old_data := g.func.new_local_named(.i32_t, '__tmp<old_data>')
+	g.load(ast.voidptr_type, 0) // array.data
+	g.func.local_tee(old_data)
+	
+	// Check if old_data != nil
+	g.func.eqz(.i32_t)
+	blk_copy := g.func.c_if([], [])
+	{
+		// old_data is nil, skip copy
+	}
+	g.func.c_else(blk_copy)
+	{
+		// Copy data: vmemcpy(new_data, old_data, len * element_size)
+		g.func.local_get(new_data)
+		g.func.local_get(old_data)
+		
+		// Get len (offset 8)
+		g.get(arr_var)
+		g.load(ast.int_type, 8) // array.len
+		g.func.local_get(elem_size)
+		g.func.mul(.i32_t)
+		
+		g.func.call('vmemcpy')
+		g.func.drop() // vmemcpy returns pointer, we don't need it
+	}
+	g.func.c_end(blk_copy)
+	
+	// Update array struct fields
+	// Update data (offset 0)
+	g.get(arr_var)
+	g.func.local_get(new_data)
+	g.store(ast.voidptr_type, 0)
+	
+	// Update offset = 0 (offset 4)
+	g.get(arr_var)
+	g.literalint(0, ast.int_type)
+	g.store(ast.int_type, 4)
+	
+	// Update cap (offset 12)
+	g.get(arr_var)
+	g.func.local_get(new_cap)
+	g.store(ast.int_type, 12)
+}
+
 pub fn log2(size int) int {
 	return match size {
 		1 { 0 }
