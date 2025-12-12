@@ -1,0 +1,12 @@
+// Test array append with << operator
+fn main() {
+	mut arr := []int{}
+	arr << 10
+	arr << 20
+	arr << 30
+	
+	println('Array after appends:')
+	println(arr[0])
+	println(arr[1])
+	println(arr[2])
+}

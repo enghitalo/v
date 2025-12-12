@@ -412,6 +412,14 @@ pub fn (mut g Gen) handle_ptr_arithmetic(typ ast.Type) {
 }
 
 pub fn (mut g Gen) infix_expr(node ast.InfixExpr, expected ast.Type) {
+	// Special handling for array << operator
+	if node.op == .left_shift && g.table.type_kind(node.left_type) == .array {
+		// Array append operation: arr << elem
+		lhs := g.get_var_or_make_from_expr(node.left, node.left_type)
+		g.array_push(lhs, node.right)
+		return
+	}
+	
 	if node.op in [.logical_or, .and] {
 		temp := g.func.new_local_named(.i32_t, '__tmp<bool>')
 		{
@@ -1166,6 +1174,13 @@ pub fn (mut g Gen) expr_stmt(node ast.Stmt, expected ast.Type) {
 
 					rop := token.assign_op_to_infix_op(node.op)
 					lhs := g.get_var_or_make_from_expr(left, typ)
+
+					// Special handling for array << operator
+					if node.op == .left_shift_assign && g.table.type_kind(lhs.typ) == .array {
+						// Array append operation: arr << elem
+						g.array_push(lhs, right)
+						return
+					}
 
 					if !g.is_pure_type(lhs.typ) {
 						// main.struct.+
