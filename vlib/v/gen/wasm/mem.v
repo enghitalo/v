@@ -170,7 +170,7 @@ pub fn (mut g Gen) new_local(name string, typ_ ast.Type) Var {
 	// allocate memory, then assign an offset
 	//
 	match ts.info {
-		ast.Struct, ast.ArrayFixed {
+		ast.Struct, ast.ArrayFixed, ast.Array {
 			size, align := g.pool.type_size(typ)
 			padding := calc_padding(g.stack_frame, align)
 			address := g.stack_frame
@@ -288,6 +288,10 @@ pub fn (g &Gen) is_pure_type(typ ast.Type) bool {
 		}
 		ast.Enum {
 			return g.is_pure_type(ts.info.typ)
+		}
+		ast.Array {
+			// Dynamic arrays require heap allocation, not pure type
+			return false
 		}
 		else {}
 	}

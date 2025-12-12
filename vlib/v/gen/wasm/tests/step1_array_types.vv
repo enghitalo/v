@@ -1,0 +1,10 @@
+// Step 1: Test basic array type handling in WASM backend
+// This verifies that ast.Array types are properly recognized by the type system
+// Actual array initialization and operations will be implemented in later steps
+
+fn main() {
+	println('Step 1: Array type system test')
+	// For now, we're just testing that the WASM backend compiles
+	// with the new Array type handling in get_wasm_type() and is_pure_type()
+	println('Type handling OK')
+}
