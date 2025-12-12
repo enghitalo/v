@@ -50,12 +50,15 @@ pub mut:
 
 1. **Array Runtime Representation**
    - Location: `vlib/builtin/array.v`
-   - The `array` struct already exists with fields:
-     - `data: voidptr` - pointer to heap data
-     - `len: int` - current length
-     - `cap: int` - capacity
-     - `element_size: int` - size of each element
-     - `offset: int` - for slicing support
+   - The `array` struct already exists with 6 fields:
+     - `data: voidptr` - pointer to heap-allocated data block
+     - `offset: int` - offset in bytes for slicing support (avoids copying)
+     - `len: int` - current length in elements
+     - `cap: int` - capacity in elements
+     - `flags: ArrayFlags` - flags controlling growth/shrink behavior
+     - `element_size: int` - size in bytes of one element
+   - **Total struct size**: ~24-28 bytes (6 fields: 5 ints + 1 pointer on 32-bit WASM)
+   - **Memory layout**: Array header is stack/heap allocated, points to separate heap block for data
 
 2. **Type Size Calculation**
    - Location: `vlib/v/gen/wasm/serialise/types.v`
@@ -92,11 +95,40 @@ ast.Array {
    ast.ArrayInit {
        // Current: Creates local var and calls set_with_expr
        // Need to:
-       // 1. Allocate array struct on stack or heap
+       // 1. Allocate array struct on stack or heap (24-28 bytes)
        // 2. Calculate total size: cap * element_size
        // 3. Call __new_array() or __new_array_with_default()
-       // 4. Initialize elements if provided
+       // 4. Initialize elements if provided (loop and store each)
        // 5. Return pointer to array struct
+   }
+   ```
+
+2. **Array Indexing with Bounds Checking** (line ~731-800):
+   ```v
+   ast.IndexExpr {
+       // Current: Only handles ArrayFixed and strings
+       // Need to add:
+       ast.Array {
+           // 1. Load array struct pointer
+           // 2. Access .data field to get element pointer (offset 0)
+           // 3. **BOUNDS CHECKING** - Critical for safety:
+           //    a. Load index value to temporary local
+           //    b. Load array.len from struct (i32.load offset=8)
+           //    c. Check upper bound: index >= len (unsigned comparison)
+           //    d. Check lower bound (implicit in unsigned: negative becomes large)
+           //    e. If out of bounds:
+           //       - Call eprintln() with error message including file:line
+           //       - Call panic("index out of range")
+           //    f. Use `if (index >= len) { panic }` pattern (similar to line 790-800)
+           // 4. Calculate element offset: (index + array.offset) * element_size
+           // 5. Load actual data pointer: array.data (i32.load offset=0)
+           // 6. Load/store element at: data_ptr + calculated_offset
+           //
+           // **Optimization**: Skip bounds check if:
+           //    - Inside `[direct_array_access]` function
+           //    - Index is compile-time constant within bounds
+           //    - Checker has already verified safety
+       }
    }
    ```
 
@@ -107,43 +139,81 @@ ast.Array {
        // Need to add:
        ast.Array {
            // 1. Load array struct pointer
-           // 2. Access .data field to get element pointer
-           // 3. Bounds check using .len field
-           // 4. Calculate offset: index * element_size
-           // 5. Load/store element
+           // 2. Access .data field to get element pointer (offset 0)
+           // 3. Bounds check using .len field (offset 8):
+           //    - Load index value to local
+           //    - Load array.len 
+           //    - Compare: if index >= len || index < 0, call panic()
+           // 4. Calculate element offset: (index + array.offset) * element_size
+           // 5. Load/store element at: array.data + calculated_offset
        }
    }
    ```
 
-3. **Array Methods**:
-   - `push()` - append element, may need reallocation
-   - `pop()` - remove last element
-   - `<<` operator - append operator
-   - `delete()` - remove element at index
-   - `insert()` - insert at index
-   - `clone()` - deep copy
-   - `filter()`, `map()`, `any()`, `all()` - higher order functions
+3. **Array Methods** - Essential operations to implement:
+   - **`push(element)`**: 
+     - Check if len == cap, grow if needed
+     - Store element at data[len * element_size]
+     - Increment len
+   - **`pop()`**: 
+     - Check len > 0, panic if empty
+     - Decrement len
+     - Return element at data[len * element_size]
+   - **`<< operator`** (append): Same as push
+   - **`delete(index)`**: 
+     - Bounds check
+     - Shift elements: memcpy(data+index, data+index+1, (len-index-1) * elem_size)
+     - Decrement len
+   - **`insert(index, element)`**: 
+     - Ensure capacity
+     - Shift elements right
+     - Store element
+     - Increment len
+   - **`clone()`**: 
+     - Allocate new array with same cap
+     - Deep copy data block: vmemcpy(new.data, old.data, len * elem_size)
+   - **`filter()`, `map()`, `any()`, `all()`**: Higher order functions (Phase 5)
 
 #### 1.2.3 Memory Management (`vlib/v/gen/wasm/mem.v`)
 
 **Required Additions**:
 
 1. **Heap Allocation Functions**:
+   - **malloc/free equivalents**: The WASM backend uses `vcalloc()` and `malloc()` from `vlib/builtin/wasm/builtin.v`
+   - `vcalloc(n)` - allocate zeroed memory, already implemented using WASM `memory.fill`
+   - `malloc(n)` - allocate uninitialized memory (needs implementation or import)
+   - `free(ptr)` - deallocate memory (needs implementation or stub for now)
+   - Integration with WASM linear memory model and heap management
+
+2. **Array Allocation Helpers**:
    - The WASM backend needs to call builtin functions:
      - `__new_array(len, cap, element_size)` - allocate new array
      - `__new_array_with_default(len, cap, element_size, default_val)` - with default
+     - `__new_array_with_multi_default(len, cap, element_size, default_val)` - for complex types
    - These are defined in `vlib/builtin/array.v`
+   - Need to ensure these functions are available in WASM context
 
-2. **Field Access**:
+3. **Field Access Helpers**:
    - Add helper functions to access array struct fields:
-     - `load_array_len()` - get length field
-     - `load_array_cap()` - get capacity field  
-     - `load_array_data()` - get data pointer
-     - `store_array_len()` - set length field
+     - `load_array_len(arr_ptr)` - get length field (offset +8 bytes)
+     - `load_array_cap(arr_ptr)` - get capacity field (offset +12 bytes)  
+     - `load_array_data(arr_ptr)` - get data pointer (offset +0 bytes)
+     - `load_array_offset(arr_ptr)` - get offset field (offset +4 bytes)
+     - `store_array_len(arr_ptr, len)` - set length field
+   - Field offsets based on struct layout: data(0), offset(4), len(8), cap(12), flags(16), element_size(20)
 
-3. **Array Reallocation**:
-   - Implement or call `array_ensure_cap()` for growth operations
-   - Handle memory copying during reallocation
+4. **Array Reallocation and Growth**:
+   - Implement or call `array_ensure_cap(arr, required_cap)` for growth operations
+   - Growth strategy (from `vlib/builtin/array.v`):
+     ```
+     new_cap = if cap < required { required } else { cap * 2 }
+     ```
+   - Handle memory copying during reallocation:
+     - Allocate new data block with `vcalloc(new_cap * element_size)`
+     - Copy existing data using `vmemcpy(new_data, old_data, len * element_size)`
+     - Update array struct fields (data, cap)
+     - Free old data block (when memory management is available)
+   - Respect `ArrayFlags.nogrow` flag - error if growth attempted when set
 
 #### 1.2.4 Runtime Support (`vlib/builtin/wasm/`)
 
@@ -157,7 +227,41 @@ ast.Array {
    - WASM-specific array helper functions
    - Optimized versions of common operations
 
-### 1.3 Module Layer (`vlib/wasm/`)
+### 1.3 Integration Points in `gen.v`
+
+**Multiple locations in `gen.v` need updates to handle dynamic arrays**:
+
+1. **Line ~755**: Remove error, add Array handling in IndexExpr
+   ```v
+   ast.Array {
+       // Currently: g.w_error('wasm backend does not support dynamic arrays')
+       // Change to: Handle array indexing with bounds checking (see section 1.2.2)
+   }
+   ```
+
+2. **Line ~723**: ArrayInit expression handling
+   - Already partially implemented for fixed arrays
+   - Extend to call `__new_array()` for dynamic arrays
+
+3. **Function calls involving arrays**:
+   - Passing arrays as parameters (pass pointer to array struct)
+   - Returning arrays from functions (return pointer)
+   - Array assignments (copy pointer, not deep copy unless clone())
+
+4. **Array field access in structs**:
+   - When struct contains array field, store as array struct
+   - Load/store entire array struct (24-28 bytes)
+
+5. **Array comparisons**:
+   - `arr1 == arr2` should compare elements, not pointers
+   - May need to call array comparison helper
+
+6. **Array in expressions**:
+   - Binary operations involving arrays
+   - Array concatenation
+   - Array slicing `arr[start..end]`
+
+### 1.4 Module Layer (`vlib/wasm/`)
 
 **No changes required** - The `wasm` module is for generating WASM bytecode and already supports all necessary instructions (memory operations, function calls, etc.)
 
