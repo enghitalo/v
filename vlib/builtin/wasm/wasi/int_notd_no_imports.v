@@ -256,3 +256,21 @@ pub fn (b bool) str() string {
 	}
 	return 'false'
 }
+
+pub fn (p voidptr) str() string {
+	return u64(p).str()
+}
+
+pub fn (n i32) str() string {
+	return int(n).str_l(12)
+}
+
+pub fn (x f32) str() string {
+	return f64(x).str()
+}
+
+pub fn (x f64) str() string {
+	// For WASM, just return the integer part
+	// String concatenation is not available in WASM builtin
+	return i64(x).str()
+}

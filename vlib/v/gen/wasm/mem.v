@@ -111,6 +111,41 @@ pub fn (mut g Gen) get_var_or_make_from_expr(node ast.Expr, typ ast.Type) Var {
 	return v
 }
 
+// ensure_var_addressable spills a pure local to the stack so that its address can be taken.
+// It leaves the value intact and updates the tracked local metadata.
+pub fn (mut g Gen) ensure_var_addressable(mut v Var) Var {
+	if v.is_address {
+		return v
+	}
+
+	// allocate stack space
+	size, align := g.pool.type_size(v.typ)
+	padding := calc_padding(g.stack_frame, align)
+	address := g.stack_frame
+	g.stack_frame += size + padding
+
+	// store current value into the new stack slot: [ptr, value] -> store
+	g.func.local_get(g.bp())
+	g.func.i32_const(i32(address))
+	g.func.add(.i32_t)
+	g.get(v)
+	g.store(v.typ, 0)
+
+	// update variable metadata
+	v.is_address = true
+	v.offset = address
+	v.idx = g.bp()
+
+	for i, lv in g.local_vars {
+		if lv.name == v.name {
+			g.local_vars[i] = v
+			break
+		}
+	}
+
+	return v
+}
+
 pub fn (mut g Gen) bp() wasm.LocalIndex {
 	if g.bp_idx == -1 {
 		g.bp_idx = g.func.new_local_named(.i32_t, '__vbp')
@@ -303,34 +338,48 @@ pub fn (g &Gen) is_pure_type(typ ast.Type) bool {
 // arr_var: Var pointing to the array struct
 // required: minimum capacity needed
 pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
+	g.ensure_cap_emit(arr_var, false, required, -1)
+}
+
+// ensure_cap_local is like ensure_cap, but takes the required capacity from a local
+// variable (wasm.LocalIndex) instead of a compile-time literal.
+pub fn (mut g Gen) ensure_cap_local(arr_var Var, required_local wasm.LocalIndex) {
+	g.ensure_cap_emit(arr_var, true, 0, required_local)
+}
+
+fn (mut g Gen) ensure_cap_emit(arr_var Var, required_is_local bool, required_val int, required_local wasm.LocalIndex) {
 	// Load current capacity (offset 12)
 	g.get(arr_var)
 	current_cap := g.func.new_local_named(.i32_t, '__tmp<cap>')
 	g.load(ast.int_type, 12) // array.cap
 	g.func.local_tee(current_cap)
-	
+
 	// Check if required <= current_cap
-	g.literalint(required, ast.int_type)
+	if required_is_local {
+		g.func.local_get(required_local)
+	} else {
+		g.literalint(required_val, ast.int_type)
+	}
 	g.func.ge(.i32_t, true) // cap >= required (signed comparison)
-	
+
 	// If cap >= required, return early
 	blk_return := g.func.c_if([], [])
 	{
 		// No reallocation needed, just return
 	}
 	g.func.c_end(blk_return)
-	
+
 	// Check nogrow flag (offset 16, bit 2)
 	// ArrayFlags: noslices=0, noshrink=1, nogrow=2
 	g.get(arr_var)
 	g.load(ast.int_type, 16) // array.flags
 	flags := g.func.new_local_named(.i32_t, '__tmp<flags>')
 	g.func.local_tee(flags)
-	
+
 	// Check if nogrow flag is set (flags & 4 == 4)
 	g.literalint(4, ast.int_type) // nogrow = bit 2 = 4
 	g.func.b_and(.i32_t)
-	
+
 	blk_nogrow_check := g.func.c_if([], [])
 	{
 		// nogrow flag is set, panic
@@ -339,12 +388,12 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		g.func.call('panic')
 	}
 	g.func.c_end(blk_nogrow_check)
-	
+
 	// Calculate new capacity: start with max(current_cap, 2), double until >= required
 	// We'll use i32 but check for overflow
 	g.func.local_get(current_cap)
 	new_cap := g.func.new_local_named(.i32_t, '__tmp<new_cap>')
-	
+
 	// If cap <= 0, use 2
 	g.func.eqz(.i32_t)
 	blk_cap_init := g.func.c_if([], [.i32_t])
@@ -357,19 +406,23 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 	}
 	g.func.c_end(blk_cap_init)
 	g.func.local_set(new_cap)
-	
+
 	// Double capacity until new_cap >= required
 	// Also check for overflow (if new_cap would exceed max_int)
 	max_int := g.func.new_local_named(.i32_t, '__tmp<max_int>')
 	g.literalint(2147483647, ast.int_type) // max_int = 2^31 - 1
 	g.func.local_set(max_int)
-	
+
 	loop_lbl := g.func.c_loop([], [])
 	{
 		g.func.local_get(new_cap)
-		g.literalint(required, ast.int_type)
+		if required_is_local {
+			g.func.local_get(required_local)
+		} else {
+			g.literalint(required_val, ast.int_type)
+		}
 		g.func.lt(.i32_t, true) // new_cap < required (signed)
-		
+
 		blk_double := g.func.c_if([], [])
 		{
 			// Check if doubling would overflow
@@ -378,7 +431,7 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 			g.literalint(2, ast.int_type)
 			g.func.div(.i32_t, true) // max_int / 2
 			g.func.gt(.i32_t, true) // new_cap > max_int/2
-			
+
 			blk_overflow_check := g.func.c_if([], [])
 			{
 				// Would overflow on doubling
@@ -386,7 +439,7 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 				g.func.local_get(current_cap)
 				g.func.local_get(max_int)
 				g.func.lt(.i32_t, true)
-				
+
 				blk_limit := g.func.c_if([], [])
 				{
 					// Limit to max_int
@@ -409,7 +462,7 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 				g.literalint(2, ast.int_type)
 				g.func.mul(.i32_t)
 				g.func.local_set(new_cap)
-				
+
 				g.func.c_br(loop_lbl) // Continue loop
 			}
 			g.func.c_end(blk_overflow_check)
@@ -417,30 +470,30 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		g.func.c_end(blk_double)
 	}
 	g.func.c_end(loop_lbl)
-	
+
 	// Get element_size (offset 20)
 	g.get(arr_var)
 	elem_size := g.func.new_local_named(.i32_t, '__tmp<elem_size>')
 	g.load(ast.int_type, 20) // array.element_size
 	g.func.local_set(elem_size)
-	
+
 	// Calculate new_size = new_cap * element_size
 	g.func.local_get(new_cap)
 	g.func.local_get(elem_size)
 	g.func.mul(.i32_t)
-	
+
 	// Allocate new memory
 	g.func.call('malloc')
 	new_data := g.func.new_local_named(.i32_t, '__tmp<new_data>')
 	g.func.local_set(new_data)
-	
+
 	// Copy existing data if old data exists
 	// Load old data pointer (offset 0)
 	g.get(arr_var)
 	old_data := g.func.new_local_named(.i32_t, '__tmp<old_data>')
 	g.load(ast.voidptr_type, 0) // array.data
 	g.func.local_tee(old_data)
-	
+
 	// Check if old_data != nil
 	g.func.eqz(.i32_t)
 	blk_copy := g.func.c_if([], [])
@@ -452,21 +505,21 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		// Copy data: vmemcpy(new_data, old_data, len * element_size)
 		g.func.local_get(new_data)
 		g.func.local_get(old_data)
-		
+
 		// Get len (offset 8)
 		g.get(arr_var)
 		g.load(ast.int_type, 8) // array.len
 		g.func.local_get(elem_size)
 		g.func.mul(.i32_t)
-		
+
 		g.func.call('vmemcpy')
 		g.func.drop() // vmemcpy returns pointer, we don't need it
-		
+
 		// Free old data if noslices flag is set (flags & 1 == 1)
 		g.func.local_get(flags)
 		g.literalint(1, ast.int_type) // noslices = bit 0 = 1
 		g.func.b_and(.i32_t)
-		
+
 		blk_free := g.func.c_if([], [])
 		{
 			// noslices flag is set, free old data
@@ -476,18 +529,18 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		g.func.c_end(blk_free)
 	}
 	g.func.c_end(blk_copy)
-	
+
 	// Update array struct fields
 	// Update data (offset 0)
 	g.get(arr_var)
 	g.func.local_get(new_data)
 	g.store(ast.voidptr_type, 0)
-	
+
 	// Update offset = 0 (offset 4)
 	g.get(arr_var)
 	g.literalint(0, ast.int_type)
 	g.store(ast.int_type, 4)
-	
+
 	// Update cap (offset 12)
 	g.get(arr_var)
 	g.func.local_get(new_cap)
@@ -495,21 +548,21 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 }
 
 // array_push implements the array << operator (append single element)
-// arr_var: Var pointing to the array struct  
+// arr_var: Var pointing to the array struct
 // elem_expr: Expression for the element to append
 pub fn (mut g Gen) array_push(arr_var Var, elem_expr ast.Expr) {
 	// Get array element type
 	elem_type := g.table.value_type(arr_var.typ)
-	
+
 	// Load current len and check if len >= max_int
 	g.get(arr_var)
 	g.load(ast.int_type, 8) // array.len
 	current_len := g.func.new_local_named(.i32_t, '__tmp<len>')
 	g.func.local_tee(current_len)
-	
+
 	g.literalint(2147483647, ast.int_type) // max_int
 	g.func.ge(.i32_t, true) // len >= max_int
-	
+
 	blk_len_check := g.func.c_if([], [])
 	{
 		// len >= max_int, panic
@@ -517,18 +570,18 @@ pub fn (mut g Gen) array_push(arr_var Var, elem_expr ast.Expr) {
 		g.func.call('panic')
 	}
 	g.func.c_end(blk_len_check)
-	
+
 	// Load current cap
 	g.get(arr_var)
 	g.load(ast.int_type, 12) // array.cap
 	current_cap := g.func.new_local_named(.i32_t, '__tmp<cap>')
 	g.func.local_set(current_cap)
-	
+
 	// Check if we need to grow: len >= cap
 	g.func.local_get(current_len)
 	g.func.local_get(current_cap)
 	g.func.ge(.i32_t, true) // len >= cap
-	
+
 	blk_grow := g.func.c_if([], [])
 	{
 		// Need to grow, call ensure_cap(len + 1)
@@ -537,150 +590,52 @@ pub fn (mut g Gen) array_push(arr_var Var, elem_expr ast.Expr) {
 		g.literalint(1, ast.int_type)
 		g.func.add(.i32_t)
 		required := g.func.new_local_named(.i32_t, '__tmp<required>')
-		g.func.local_tee(required)
-		
-		// Call ensure_cap with the required capacity as int
-		// We need to pass it as a literal to ensure_cap
-		// Since ensure_cap expects a compile-time int, we'll inline the logic here
-		
-		// Get element_size first
-		g.get(arr_var)
-		elem_size := g.func.new_local_named(.i32_t, '__tmp<elem_size>')
-		g.load(ast.int_type, 20) // array.element_size
-		g.func.local_set(elem_size)
-		
-		// Check nogrow flag
-		g.get(arr_var)
-		g.load(ast.int_type, 16) // array.flags
-		flags := g.func.new_local_named(.i32_t, '__tmp<flags>')
-		g.func.local_tee(flags)
-		
-		g.literalint(4, ast.int_type) // nogrow = bit 2 = 4
-		g.func.b_and(.i32_t)
-		
-		blk_nogrow := g.func.c_if([], [])
-		{
-			g.expr(ast.StringLiteral{ val: 'array.push: array with nogrow flag cannot grow' }, ast.string_type)
-			g.func.call('panic')
-		}
-		g.func.c_end(blk_nogrow)
-		
-		// Calculate new capacity (doubling from current)
-		g.func.local_get(current_cap)
-		new_cap := g.func.new_local_named(.i32_t, '__tmp<new_cap>')
-		
-		// If cap <= 0, use 2, else double
-		g.func.eqz(.i32_t)
-		blk_cap_init := g.func.c_if([], [.i32_t])
-		{
-			g.literalint(2, ast.int_type)
-		}
-		g.func.c_else(blk_cap_init)
-		{
-			g.func.local_get(current_cap)
-			g.literalint(2, ast.int_type)
-			g.func.mul(.i32_t)
-		}
-		g.func.c_end(blk_cap_init)
-		g.func.local_set(new_cap)
-		
-		// Ensure new_cap >= required
-		loop_lbl := g.func.c_loop([], [])
-		{
-			g.func.local_get(new_cap)
-			g.func.local_get(required)
-			g.func.lt(.i32_t, true)
-			
-			blk_double := g.func.c_if([], [])
-			{
-				g.func.local_get(new_cap)
-				g.literalint(2, ast.int_type)
-				g.func.mul(.i32_t)
-				g.func.local_set(new_cap)
-				g.func.c_br(loop_lbl)
-			}
-			g.func.c_end(blk_double)
-		}
-		g.func.c_end(loop_lbl)
-		
-		// Allocate new memory
-		g.func.local_get(new_cap)
-		g.func.local_get(elem_size)
-		g.func.mul(.i32_t)
-		g.func.call('malloc')
-		new_data := g.func.new_local_named(.i32_t, '__tmp<new_data>')
-		g.func.local_set(new_data)
-		
-		// Copy existing data
-		g.get(arr_var)
-		old_data := g.func.new_local_named(.i32_t, '__tmp<old_data>')
-		g.load(ast.voidptr_type, 0)
-		g.func.local_tee(old_data)
-		
-		g.func.eqz(.i32_t)
-		blk_copy := g.func.c_if([], [])
-		{
-			// old_data is nil
-		}
-		g.func.c_else(blk_copy)
-		{
-			// vmemcpy(new_data, old_data, len * element_size)
-			g.func.local_get(new_data)
-			g.func.local_get(old_data)
-			g.func.local_get(current_len)
-			g.func.local_get(elem_size)
-			g.func.mul(.i32_t)
-			g.func.call('vmemcpy')
-			g.func.drop()
-			
-			// Free old data if noslices
-			g.func.local_get(flags)
-			g.literalint(1, ast.int_type)
-			g.func.b_and(.i32_t)
-			
-			blk_free := g.func.c_if([], [])
-			{
-				g.func.local_get(old_data)
-				g.func.call('free')
-			}
-			g.func.c_end(blk_free)
-		}
-		g.func.c_end(blk_copy)
-		
-		// Update array struct
-		g.get(arr_var)
-		g.func.local_get(new_data)
-		g.store(ast.voidptr_type, 0)
-		
-		g.get(arr_var)
-		g.literalint(0, ast.int_type)
-		g.store(ast.int_type, 4) // offset = 0
-		
-		g.get(arr_var)
-		g.func.local_get(new_cap)
-		g.store(ast.int_type, 12) // cap = new_cap
+		g.func.local_set(required)
+
+		// Delegate growth to shared routine
+		g.ensure_cap_local(arr_var, required)
 	}
 	g.func.c_end(blk_grow)
-	
+
 	// Get element_size (offset 20)
 	g.get(arr_var)
 	final_elem_size := g.func.new_local_named(.i32_t, '__tmp<final_elem_size>')
 	g.load(ast.int_type, 20)
 	g.func.local_set(final_elem_size)
-	
+
 	// Calculate address for new element: data + (len * element_size)
 	g.get(arr_var)
 	g.load(ast.voidptr_type, 0) // array.data
-	
+
 	g.func.local_get(current_len)
 	g.func.local_get(final_elem_size)
 	g.func.mul(.i32_t)
 	g.func.add(.i32_t)
-	
+
+	target_addr := g.func.new_local_named(.i32_t, '__tmp<target_addr>')
+	g.func.local_set(target_addr)
+
 	// Evaluate and store the new element
-	g.expr(elem_expr, elem_type)
-	g.store(elem_type, 0)
-	
+	if g.is_pure_type(elem_type) {
+		// For pure types (int, float, etc.), simple store
+		g.func.local_get(target_addr)
+		g.expr(elem_expr, elem_type)
+		g.store(elem_type, 0)
+	} else {
+		// For complex types (structs), need to copy data
+		// Create a temporary variable for the target location
+		target_var := Var{
+			name:       '__push_target'
+			typ:        elem_type
+			idx:        target_addr
+			is_address: true
+			offset:     0
+		}
+
+		// Use set_with_expr to properly initialize the target
+		g.set_with_expr(elem_expr, target_var)
+	}
+
 	// Increment len (offset 8)
 	g.get(arr_var)
 	g.func.local_get(current_len)
@@ -1136,23 +1091,24 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 				// instead of calling __new_array (which may not be available)
 				elm_typ := init.elem_type
 				elm_size, _ := g.pool.type_size(elm_typ)
-				
+
 				// Calculate array length
 				arr_len := init.exprs.len
-				
+
 				// Allocate data for array elements if needed
 				if arr_len > 0 {
 					// Allocate memory for data: len * element_size
 					total_size := arr_len * elm_size
 					g.literalint(total_size, ast.int_type)
-					g.func.call('vcalloc')  // Returns pointer to zeroed memory
-					
+					g.func.call('vcalloc') // Returns pointer to zeroed memory
+
 					// Store data pointer temporarily
 					data_ptr := g.func.new_local_named(.i32_t, '__tmp<array_data>')
-					g.func.local_tee(data_ptr)
-					
+					g.func.local_set(data_ptr)
+
 					// Populate the data
 					for i, e in init.exprs {
+						elem_addr := g.func.new_local_named(.i32_t, '__tmp<elem_addr>')
 						g.func.local_get(data_ptr)
 						if i > 0 {
 							if elm_size > 1 {
@@ -1162,37 +1118,50 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 							}
 							g.func.add(.i32_t)
 						}
-						
-						g.expr(e, elm_typ)
-						g.store(elm_typ, 0)
-					}
-					
-					// Now build the array struct on stack
+						g.func.local_set(elem_addr)
+
+						if g.is_pure_type(elm_typ) {
+							// For pure types, simple store
+							g.func.local_get(elem_addr)
+							g.expr(e, elm_typ)
+							g.store(elm_typ, 0)
+						} else {
+							// For complex types (structs), need proper initialization
+							target_var := Var{
+								name:       '__array_elem'
+								typ:        elm_typ
+								idx:        elem_addr
+								is_address: true
+								offset:     0
+							}
+							g.set_with_expr(e, target_var)
+						}
+					} // Now build the array struct on stack
 					// Store data pointer (offset 0)
 					g.get(v)
 					g.func.local_get(data_ptr)
 					g.store(ast.voidptr_type, 0)
-					
+
 					// Store offset = 0 (offset 4)
 					g.get(v)
 					g.literalint(0, ast.int_type)
 					g.store(ast.int_type, 4)
-					
+
 					// Store len (offset 8)
 					g.get(v)
 					g.literalint(arr_len, ast.int_type)
 					g.store(ast.int_type, 8)
-					
+
 					// Store cap (offset 12)
 					g.get(v)
 					g.literalint(arr_len, ast.int_type)
 					g.store(ast.int_type, 12)
-					
+
 					// Store flags = 0 (offset 16)
 					g.get(v)
 					g.literalint(0, ast.int_type)
 					g.store(ast.int_type, 16)
-					
+
 					// Store element_size (offset 20)
 					g.get(v)
 					g.literalint(elm_size, ast.int_type)
@@ -1201,7 +1170,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 					// Empty array - zero out the struct
 					arr_size, _ := g.pool.type_size(v.typ)
 					g.zero_fill(v, arr_size)
-					
+
 					// Still need to set element_size
 					g.get(v)
 					g.literalint(elm_size, ast.int_type)
