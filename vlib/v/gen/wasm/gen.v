@@ -752,7 +752,17 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 			} else {
 				match ts.info {
 					ast.Array {
-						g.w_error('wasm backend does not support dynamic arrays')
+						// Dynamic array: access through array struct
+						// Array struct has: data, offset, len, cap, flags, element_size
+						// We need to load the data pointer and get the element type
+						if !direct_array_access {
+							tmp_voidptr_var = g.func.new_local_named(.i32_t, '__tmp<array>')
+							g.func.local_tee(tmp_voidptr_var)
+						}
+						
+						// Load data pointer from array struct (offset 0)
+						g.load(ast.voidptr_type, 0) // array.data
+						typ = ts.info.elem_type
 					}
 					ast.ArrayFixed {
 						typ = ts.info.elem_type
@@ -783,6 +793,10 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 					g.load_field(ast.string_type, ast.int_type, 'len')
 				} else if ts.info is ast.ArrayFixed {
 					g.func.i32_const(i32(ts.info.size))
+				} else if ts.info is ast.Array {
+					// Load len from array struct (offset 8 for len field)
+					g.func.local_get(tmp_voidptr_var)
+					g.load(ast.int_type, 8) // array.len at offset 8
 				} else {
 					panic('unreachable')
 				}
