@@ -299,7 +299,7 @@ pub fn (g &Gen) is_pure_type(typ ast.Type) bool {
 }
 
 // ensure_cap ensures an array has at least the required capacity
-// This implements the array growth logic for dynamic arrays
+// This implements the array growth logic for dynamic arrays with safety checks
 // arr_var: Var pointing to the array struct
 // required: minimum capacity needed
 pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
@@ -320,13 +320,32 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 	}
 	g.func.c_end(blk_return)
 	
-	// Calculate new capacity: start with max(current_cap, 2), double until >= required
-	g.func.local_get(current_cap)
-	zero_test := g.func.new_local_named(.i32_t, '__tmp<cap_test>')
-	g.func.local_tee(zero_test)
+	// Check nogrow flag (offset 16, bit 2)
+	// ArrayFlags: noslices=0, noshrink=1, nogrow=2
+	g.get(arr_var)
+	g.load(ast.int_type, 16) // array.flags
+	flags := g.func.new_local_named(.i32_t, '__tmp<flags>')
+	g.func.local_tee(flags)
 	
-	// If cap > 0, use cap, else use 2
+	// Check if nogrow flag is set (flags & 4 == 4)
+	g.literalint(4, ast.int_type) // nogrow = bit 2 = 4
+	g.func.b_and(.i32_t)
+	
+	blk_nogrow_check := g.func.c_if([], [])
+	{
+		// nogrow flag is set, panic
+		g.expr(ast.StringLiteral{ val: 'array.ensure_cap: array with nogrow flag cannot grow' },
+			ast.string_type)
+		g.func.call('panic')
+	}
+	g.func.c_end(blk_nogrow_check)
+	
+	// Calculate new capacity: start with max(current_cap, 2), double until >= required
+	// We'll use i32 but check for overflow
+	g.func.local_get(current_cap)
 	new_cap := g.func.new_local_named(.i32_t, '__tmp<new_cap>')
+	
+	// If cap <= 0, use 2
 	g.func.eqz(.i32_t)
 	blk_cap_init := g.func.c_if([], [.i32_t])
 	{
@@ -340,6 +359,11 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 	g.func.local_set(new_cap)
 	
 	// Double capacity until new_cap >= required
+	// Also check for overflow (if new_cap would exceed max_int)
+	max_int := g.func.new_local_named(.i32_t, '__tmp<max_int>')
+	g.literalint(2147483647, ast.int_type) // max_int = 2^31 - 1
+	g.func.local_set(max_int)
+	
 	loop_lbl := g.func.c_loop([], [])
 	{
 		g.func.local_get(new_cap)
@@ -348,13 +372,47 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		
 		blk_double := g.func.c_if([], [])
 		{
-			// new_cap *= 2
+			// Check if doubling would overflow
 			g.func.local_get(new_cap)
+			g.func.local_get(max_int)
 			g.literalint(2, ast.int_type)
-			g.func.mul(.i32_t)
-			g.func.local_set(new_cap)
+			g.func.div(.i32_t, true) // max_int / 2
+			g.func.gt(.i32_t, true) // new_cap > max_int/2
 			
-			g.func.c_br(loop_lbl) // Continue loop
+			blk_overflow_check := g.func.c_if([], [])
+			{
+				// Would overflow on doubling
+				// If current_cap < max_int, set to max_int and break
+				g.func.local_get(current_cap)
+				g.func.local_get(max_int)
+				g.func.lt(.i32_t, true)
+				
+				blk_limit := g.func.c_if([], [])
+				{
+					// Limit to max_int
+					g.func.local_get(max_int)
+					g.func.local_set(new_cap)
+				}
+				g.func.c_else(blk_limit)
+				{
+					// Already at max_int, cannot grow further
+					g.expr(ast.StringLiteral{ val: 'array.ensure_cap: capacity exceeds max_int' },
+						ast.string_type)
+					g.func.call('panic')
+				}
+				g.func.c_end(blk_limit)
+			}
+			g.func.c_else(blk_overflow_check)
+			{
+				// Safe to double
+				g.func.local_get(new_cap)
+				g.literalint(2, ast.int_type)
+				g.func.mul(.i32_t)
+				g.func.local_set(new_cap)
+				
+				g.func.c_br(loop_lbl) // Continue loop
+			}
+			g.func.c_end(blk_overflow_check)
 		}
 		g.func.c_end(blk_double)
 	}
@@ -387,7 +445,7 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 	g.func.eqz(.i32_t)
 	blk_copy := g.func.c_if([], [])
 	{
-		// old_data is nil, skip copy
+		// old_data is nil, skip copy and free
 	}
 	g.func.c_else(blk_copy)
 	{
@@ -403,6 +461,19 @@ pub fn (mut g Gen) ensure_cap(arr_var Var, required int) {
 		
 		g.func.call('vmemcpy')
 		g.func.drop() // vmemcpy returns pointer, we don't need it
+		
+		// Free old data if noslices flag is set (flags & 1 == 1)
+		g.func.local_get(flags)
+		g.literalint(1, ast.int_type) // noslices = bit 0 = 1
+		g.func.b_and(.i32_t)
+		
+		blk_free := g.func.c_if([], [])
+		{
+			// noslices flag is set, free old data
+			g.func.local_get(old_data)
+			g.func.call('free')
+		}
+		g.func.c_end(blk_free)
 	}
 	g.func.c_end(blk_copy)
 	
