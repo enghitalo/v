@@ -1,0 +1,45 @@
+// Test array slicing
+fn main() {
+	// Test basic slicing
+	println('=== Basic slicing ===')
+	a := [1, 2, 3, 4, 5]
+	b := a[1..4]
+	println('original len:')
+	println(a.len)
+	println('slice len:')
+	println(b.len)
+	println('slice elements:')
+	println(b[0])
+	println(b[1])
+	println(b[2])
+	
+	// Test slice from start
+	println('=== Slice from start ===')
+	c := a[..3]
+	println('len:')
+	println(c.len)
+	println('elements:')
+	println(c[0])
+	println(c[1])
+	println(c[2])
+	
+	// Test slice to end
+	println('=== Slice to end ===')
+	d := a[2..]
+	println('len:')
+	println(d.len)
+	println('elements:')
+	println(d[0])
+	println(d[1])
+	println(d[2])
+	
+	// Test full slice
+	println('=== Full slice ===')
+	e := a[..]
+	println('len:')
+	println(e.len)
+	println('first:')
+	println(e[0])
+	println('last:')
+	println(e[4])
+}

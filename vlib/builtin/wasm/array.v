@@ -174,3 +174,72 @@ pub fn (a array) set_unsafe(i int, val voidptr) {
 		vmemcpy(dest, val, a.element_size)
 	}
 }
+
+// slice returns an array using the same buffer as the original array
+// but starting from the `start` element and ending before the `end` element.
+// The capacity is set to the number of elements in the slice.
+// Slices share memory with the original array (no copying).
+fn (a array) slice(start int, _end int) array {
+	end := if _end == max_i64 || _end == max_i32 { a.len } else { _end }
+	$if !no_bounds_checking {
+		if start > end {
+			panic('array.slice: invalid slice index (start>end)')
+		}
+		if end > a.len {
+			panic('array.slice: slice bounds out of range')
+		}
+		if start < 0 {
+			panic('array.slice: slice bounds out of range (start<0)')
+		}
+	}
+	offset := u64(start) * u64(a.element_size)
+	data := unsafe { &u8(a.data) + offset }
+	l := end - start
+	res := array{
+		element_size: a.element_size
+		data:         data
+		offset:       a.offset + int(offset)
+		len:          l
+		cap:          l
+	}
+	return res
+}
+
+// slice_ni returns an array using the same buffer as original array
+// but starting from the `start` element and ending with the element before
+// the `end` element of the original array.
+// This function can use negative indexes `a.slice_ni(-3, a.len)`
+// that get the last 3 elements of the array.
+// This function always returns a valid array (never panics).
+fn (a array) slice_ni(_start int, _end int) array {
+	mut end := if _end == max_i64 || _end == max_i32 { a.len } else { _end }
+	mut start := _start
+	if start < 0 {
+		start = a.len + start
+		if start < 0 {
+			start = 0
+		}
+	}
+	if end < 0 {
+		end = a.len + end
+		if end < 0 {
+			end = 0
+		}
+	}
+	if end >= a.len {
+		end = a.len
+	}
+	if start >= a.len {
+		start = a.len
+	}
+	mut res := a
+	res.len = end - start
+	if res.len < 0 {
+		res.len = 0
+	}
+	res.cap = res.len
+	offset := u64(start) * u64(a.element_size)
+	res.data = unsafe { &u8(a.data) + offset }
+	res.offset = a.offset + int(offset)
+	return res
+}

@@ -751,6 +751,47 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 			g.w_error('wasm backend does not support threads')
 		}
 		ast.IndexExpr {
+			// Check if this is array slicing (index is a RangeExpr)
+			if node.index is ast.RangeExpr {
+				// Array slicing: arr[start..end]
+				// Call the array.slice() method
+				result_var := g.new_local('__slice_result', expected)
+				
+				// Get the array we're slicing
+				g.get(result_var)
+				g.expr(node.left, node.left_type)
+				
+				// Get start index (or 0 if missing)
+				if node.index.has_low {
+					g.expr(node.index.low, ast.int_type)
+				} else {
+					g.literalint(0, ast.int_type)
+				}
+				
+				// Get end index (or max_i32 if missing)
+				if node.index.has_high {
+					g.expr(node.index.high, ast.int_type)
+				} else {
+					// Use max_i32 to indicate "end of array"
+					g.literalint(2147483647, ast.int_type) // max_i32
+				}
+				
+				// Call slice() method
+				// The method returns a new array struct
+				g.func.call('builtin__array_slice')
+				
+				// Store the result
+				arr_struct_size, _ := g.pool.type_size(expected)
+				g.func.i32_const(i32(arr_struct_size))
+				g.func.call('vmemcpy')
+				g.func.drop()
+				
+				// Return the result
+				g.get(result_var)
+				return
+			}
+			
+			// Regular array indexing
 			mut direct_array_access := g.is_direct_array_access || node.is_direct
 			mut tmp_voidptr_var := wasm.LocalIndex(-1)
 
