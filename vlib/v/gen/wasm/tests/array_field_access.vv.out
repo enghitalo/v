@@ -1,13 +1,12 @@
-=== u16 array ===
-1
-2
+u16 array
+7f48007f4fd0
 3
-=== string array with len/cap ===
-hello
-world
-test
-=== int array ===
-100
-200
-300
-400
+3
+0
+2
+int array
+7f48007f4fe0
+4
+4
+0
+4

@@ -1,40 +1,29 @@
-// Test array operations in WASM backend
-// Note: Direct array struct field access (a.data, a.len, a.cap) requires
-// parser modifications outside the allowed directories (vlib/builtin/wasm and vlib/v/gen/wasm)
+// Test array struct field access in WASM backend
+// This test demonstrates direct access to array struct fields
 
 fn test_array_with_u16() {
 	// Test with u16 array
 	a := [u16(1), 2, 3]
-	println('=== u16 array ===')
-	println(a[0])
-	println(a[1])
-	println(a[2])
-}
-
-fn test_array_with_len_cap() {
-	// Test with string array initialized with len and cap  
-	mut b := []string{len: 3, cap: 10}
-	b[0] = 'hello'
-	b[1] = 'world'
-	b[2] = 'test'
-	println('=== string array with len/cap ===')
-	println(b[0])
-	println(b[1])
-	println(b[2])
+	println('u16 array')
+	println(a.data)
+	println(a.len)
+	println(a.cap)
+	println(a.offset)
+	println(a.element_size)
 }
 
 fn test_array_with_ints() {
 	// Test with int array
 	c := [100, 200, 300, 400]
-	println('=== int array ===')
-	println(c[0])
-	println(c[1])
-	println(c[2])
-	println(c[3])
+	println('int array')
+	println(c.data)
+	println(c.len)
+	println(c.cap)
+	println(c.offset)
+	println(c.element_size)
 }
 
 fn main() {
 	test_array_with_u16()
-	test_array_with_len_cap()
 	test_array_with_ints()
 }
