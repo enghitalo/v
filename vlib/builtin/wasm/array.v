@@ -146,8 +146,21 @@ pub fn (a &array) clone_to_depth(depth int) array {
 	} else if depth > 0 && a.element_size == sizeof(string) && a.len >= 0 && a.cap >= a.len {
 		for i in 0 .. a.len {
 			str_ptr := unsafe { &string(a.get_unsafe(i)) }
-			str_clone := (*str_ptr).clone()
-			unsafe { arr.set_unsafe(i, &str_clone) }
+			// For WASM, we need to manually copy strings
+			original_str := unsafe { *str_ptr }
+			mut new_str := ''
+			if original_str.len > 0 {
+				new_str = unsafe { tos(malloc(original_str.len + 1), original_str.len) }
+				for j in 0 .. original_str.len {
+					unsafe {
+						new_str.str[j] = original_str.str[j]
+					}
+				}
+				unsafe {
+					new_str.str[original_str.len] = 0
+				}
+			}
+			unsafe { arr.set_unsafe(i, &new_str) }
 		}
 		return arr
 	}
@@ -259,8 +272,80 @@ fn (a array) eq(b array) bool {
 	if a.element_size != b.element_size {
 		return false
 	}
-	// Compare elements using vmemcmp
-	// We compare byte-by-byte for the entire data
-	bytes_to_compare := u64(a.len) * u64(a.element_size)
-	return unsafe { vmemcmp(a.data, b.data, int(bytes_to_compare)) == 0 }
+	// Use efficient vmemcmp for byte-by-byte comparison
+	bytes_to_compare := a.len * a.element_size
+	return vmemcmp(a.data, b.data, bytes_to_compare) == 0
+}
+
+// str returns a string representation of string arrays
+// Format: ['elem1', 'elem2', 'elem3']
+pub fn (a []string) str() string {
+	if a.len == 0 {
+		return '[]'
+	}
+	// Build the string manually without using string interpolation or builders
+	// Calculate total size needed
+	mut total_len := 2 // []
+	for i in 0 .. a.len {
+		s := a[i]
+		total_len += s.len + 2 // quotes
+		if i > 0 {
+			total_len += 2 // ', '
+		}
+	}
+	
+	// Allocate memory for result
+	mut result_data := unsafe { malloc(total_len + 1) }
+	mut pos := 0
+	
+	// Write '['
+	unsafe {
+		result_data[pos] = `[`
+	}
+	pos++
+	
+	// Write each element
+	for i in 0 .. a.len {
+		// Write comma and space if not first
+		if i > 0 {
+			unsafe {
+				result_data[pos] = `,`
+				result_data[pos + 1] = ` `
+			}
+			pos += 2
+		}
+		
+		// Write opening quote
+		unsafe {
+			result_data[pos] = `'`
+		}
+		pos++
+		
+		// Write string content
+		s := a[i]
+		for j in 0 .. s.len {
+			unsafe {
+				result_data[pos] = s.str[j]
+			}
+			pos++
+		}
+		
+		// Write closing quote
+		unsafe {
+			result_data[pos] = `'`
+		}
+		pos++
+	}
+	
+	// Write ']'
+	unsafe {
+		result_data[pos] = `]`
+		result_data[pos + 1] = 0 // null terminator
+	}
+	
+	// Return as string
+	return string{
+		str: result_data
+		len: total_len
+	}
 }

@@ -1,0 +1,23 @@
+fn test_array_printing_strings() {
+	// Test string array printing
+	strings := ['hello', 'world', 'test']
+	println(strings)
+	
+	// Test empty array
+	empty := []string{}
+	println(empty)
+	
+	// Test single element
+	single := ['one']
+	println(single)
+}
+
+fn test_array_printing_ints() {
+	// Test int array - will print as array struct
+	// Note: Only string arrays have str() method for now
+	// Int arrays will be printed differently
+	nums := [1, 2, 3, 4, 5]
+	for num in nums {
+		println(num)
+	}
+}

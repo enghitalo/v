@@ -1118,7 +1118,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 					// Push init value pointer (or 0 for no default)
 					if init.has_init {
 						// Allocate space on stack for init value
-						init_var := g.new_local('__init', elm_typ)
+						mut init_var := g.new_local('__init', elm_typ)
 						init_var_addr := g.ensure_var_addressable(mut init_var)
 						
 						// Store init value
