@@ -1,0 +1,24 @@
+=== Array with len ===
+len:
+5
+cap:
+5
+=== Array with len and cap ===
+len:
+3
+cap:
+10
+=== Array with len, cap, and init ===
+len:
+4
+cap:
+8
+first element:
+42
+last element:
+42
+=== String array with init ===
+len:
+2
+first element:
+hello

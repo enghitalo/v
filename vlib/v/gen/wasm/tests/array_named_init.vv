@@ -1,0 +1,38 @@
+// Test array initialization with named parameters
+fn main() {
+	// Test len only
+	println('=== Array with len ===')
+	a := []int{len: 5}
+	println('len:')
+	println(a.len)
+	println('cap:')
+	println(a.cap)
+	
+	// Test len and cap
+	println('=== Array with len and cap ===')
+	b := []int{len: 3, cap: 10}
+	println('len:')
+	println(b.len)
+	println('cap:')
+	println(b.cap)
+	
+	// Test len, cap, and init
+	println('=== Array with len, cap, and init ===')
+	c := []int{len: 4, cap: 8, init: 42}
+	println('len:')
+	println(c.len)
+	println('cap:')
+	println(c.cap)
+	println('first element:')
+	println(c[0])
+	println('last element:')
+	println(c[3])
+	
+	// Test with different types
+	println('=== String array with init ===')
+	d := []string{len: 2, init: 'hello'}
+	println('len:')
+	println(d.len)
+	println('first element:')
+	println(d[0])
+}

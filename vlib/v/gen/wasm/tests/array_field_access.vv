@@ -1,0 +1,39 @@
+// Test array struct field access in WASM backend
+// This test demonstrates direct access to array struct fields
+
+fn test_array_with_u16() {
+	// Test with u16 array
+	a := [u16(1), 2, 3]
+	println('u16 array fields:')
+	println('len: ')
+	println(a.len)
+	println('cap: ')
+	println(a.cap)
+	println('offset: ')
+	println(a.offset)
+	println('element_size: ')
+	println(a.element_size)
+	println('first element: ')
+	println(a[0])
+}
+
+fn test_array_with_ints() {
+	// Test with int array
+	c := [100, 200, 300, 400]
+	println('int array fields:')
+	println('len: ')
+	println(c.len)
+	println('cap: ')
+	println(c.cap)
+	println('offset: ')
+	println(c.offset)
+	println('element_size: ')
+	println(c.element_size)
+	println('first element: ')
+	println(c[0])
+}
+
+fn main() {
+	test_array_with_u16()
+	test_array_with_ints()
+}

@@ -1,0 +1,30 @@
+=== Basic slicing ===
+original len:
+5
+slice len:
+3
+slice elements:
+2
+3
+4
+=== Slice from start ===
+len:
+3
+elements:
+1
+2
+3
+=== Slice to end ===
+len:
+3
+elements:
+3
+4
+5
+=== Full slice ===
+len:
+5
+first:
+1
+last:
+5

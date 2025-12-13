@@ -65,7 +65,7 @@ fn test_wasm() {
 
 		// Test with -b wasm
 		bench.step()
-		cmd_wasm := '${os.quoted_path(vexe)} -b wasm run ${os.quoted_path(full_test_path)} 2> ${os.quoted_path(tmperrfile)}'
+		cmd_wasm := '${os.quoted_path(vexe)} -b wasm -v run ${os.quoted_path(full_test_path)} 2> ${os.quoted_path(tmperrfile)}'
 		if is_verbose {
 			println(cmd_wasm)
 		}

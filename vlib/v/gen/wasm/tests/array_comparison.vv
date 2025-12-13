@@ -1,0 +1,54 @@
+// Test array comparison
+fn main() {
+	// Test equality with identical arrays
+	println('=== Equal arrays ===')
+	a := [1, 2, 3]
+	b := [1, 2, 3]
+	if a == b {
+		println('arrays are equal')
+	} else {
+		println('arrays are NOT equal')
+	}
+	
+	// Test inequality with different arrays
+	println('=== Different arrays ===')
+	c := [1, 2, 3]
+	d := [1, 2, 4]
+	if c != d {
+		println('arrays are different')
+	} else {
+		println('arrays are NOT different')
+	}
+	
+	// Test with different lengths
+	println('=== Different lengths ===')
+	e := [1, 2, 3]
+	f := [1, 2]
+	if e != f {
+		println('arrays have different lengths')
+	} else {
+		println('arrays have same lengths')
+	}
+	
+	// Test empty arrays
+	println('=== Empty arrays ===')
+	g := []int{}
+	h := []int{}
+	if g == h {
+		println('empty arrays are equal')
+	} else {
+		println('empty arrays are NOT equal')
+	}
+	
+	// Test string arrays
+	println('=== String arrays ===')
+	s1 := ['hello', 'world']
+	s2 := ['hello', 'world']
+	s3 := ['hello', 'there']
+	if s1 == s2 {
+		println('string arrays are equal')
+	}
+	if s1 != s3 {
+		println('string arrays are different')
+	}
+}

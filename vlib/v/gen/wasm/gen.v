@@ -123,7 +123,7 @@ pub fn (mut g Gen) dbg_type_name(name string, typ ast.Type) string {
 }
 
 pub fn unpack_literal_int(typ ast.Type) ast.Type {
-	return if typ == ast.int_literal_type { ast.i64_type } else { typ }
+	return if typ == ast.int_literal_type { ast.int_type } else { typ }
 }
 
 pub fn (g &Gen) get_ns_plus_name(default_name string, attrs []ast.Attr) (string, string) {
@@ -185,7 +185,16 @@ pub fn (mut g Gen) fn_decl(node ast.FnDecl) {
 	}
 
 	name := if node.is_method {
-		'${g.table.get_type_name(node.receiver.typ)}.${node.name}'
+		mut recv_type := node.receiver.typ
+		mut recv_type_name := g.table.get_type_name(recv_type)
+		// For array methods, normalize to 'array' type name (after dereferencing pointers)
+		if recv_type.is_ptr() {
+			recv_type = recv_type.deref()
+		}
+		if g.table.type_kind(recv_type) in [.array, .array_fixed] {
+			recv_type_name = 'array'
+		}
+		'${recv_type_name}.${node.name}'
 	} else {
 		node.name
 	}
@@ -383,6 +392,11 @@ pub fn (mut g Gen) cast(typ ast.Type, expected_type ast.Type) {
 	wtyp := g.as_numtype(g.get_wasm_type_int_literal(typ))
 	expected_wtype := g.as_numtype(g.get_wasm_type_int_literal(expected_type))
 
+	// Avoid emitting conversions when types already align; prevents redundant wrap_i64
+	if wtyp == expected_wtype {
+		return
+	}
+
 	g.func.cast(wtyp, typ.is_signed(), expected_wtype)
 }
 
@@ -417,6 +431,21 @@ pub fn (mut g Gen) infix_expr(node ast.InfixExpr, expected ast.Type) {
 		// Array append operation: arr << elem
 		lhs := g.get_var_or_make_from_expr(node.left, node.left_type)
 		g.array_push(lhs, node.right)
+		return
+	}
+
+	// Special handling for array == and != operators
+	if node.op in [.eq, .ne] && g.table.type_kind(node.left_type) == .array {
+		// Array comparison: arr1 == arr2 or arr1 != arr2
+		// Call the array.eq() method
+		g.expr(node.left, node.left_type)
+		g.expr(node.right, node.right_type)
+		g.func.call('array.eq')
+
+		// If it's !=, negate the result
+		if node.op == .ne {
+			g.func.eqz(.i32_t)
+		}
 		return
 	}
 
@@ -569,7 +598,16 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 	is_print := name in ['panic', 'println', 'print', 'eprintln', 'eprint']
 
 	if node.is_method {
-		name = '${g.table.get_type_name(node.receiver_type)}.${node.name}'
+		mut recv_type := node.receiver_type
+		mut recv_type_name := g.table.get_type_name(recv_type)
+		// For array methods, normalize to 'array' type name (after dereferencing pointers)
+		if recv_type.is_ptr() {
+			recv_type = recv_type.deref()
+		}
+		if g.table.type_kind(recv_type) in [.array, .array_fixed] {
+			recv_type_name = 'array'
+		}
+		name = '${recv_type_name}.${node.name}'
 	}
 
 	if node.language in [.js, .wasm] {
@@ -625,7 +663,7 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 		} else {
 			// Normal case: just pass the receiver as-is
 			if node.receiver_type == ast.int_literal_type && node.left is ast.IntegerLiteral {
-				g.literal((node.left as ast.IntegerLiteral).val, ast.i64_type)
+				g.literal((node.left as ast.IntegerLiteral).val, ast.int_type)
 			} else {
 				g.expr(node.left, node.receiver_type)
 			}
@@ -664,7 +702,7 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 			// another hack alert!
 			if node.expected_arg_types[idx] == ast.int_literal_type && expr is ast.IntegerLiteral {
 				lit := expr as ast.IntegerLiteral
-				g.literal(lit.val, ast.i64_type)
+				g.literal(lit.val, ast.int_type)
 			} else {
 				g.expr(expr, node.expected_arg_types[idx])
 			}
@@ -714,8 +752,29 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 
 pub fn (mut g Gen) get_field_offset(typ ast.Type, name string) int {
 	ts := g.table.sym(typ)
-	field := ts.find_field(name) or { g.w_error('could not find field `${name}` on init') }
-	si := g.pool.type_struct_info(typ) or { panic('unreachable') }
+
+	// Special handling for array types - they have data/len/cap/etc fields
+	if g.table.type_kind(typ) in [.array, .array_fixed] {
+		match name {
+			'data' { return 0 }       // offset of data pointer in array struct
+			'len' { return 8 }        // offset of len in array struct (ptr(8) + offset(8))
+			'cap' { return 12 }       // offset of cap in array struct
+			'offset' { return 4 }     // offset field for slices
+			'flags' { return 16 }     // offset of flags
+			'element_size' { return 20 } // offset of element_size
+			else { g.w_error('unknown array field `${name}`') }
+		}
+	}
+
+	si := g.pool.type_struct_info(typ) or {
+		g.w_error('cannot get struct info for type `${ts.name}`: ${err}')
+	}
+
+	// Find the field index
+	field := ts.find_field(name) or {
+		g.w_error('field `${name}` not found in type `${ts.name}`')
+	}
+
 	return si.offsets[field.i]
 }
 
@@ -751,6 +810,47 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 			g.w_error('wasm backend does not support threads')
 		}
 		ast.IndexExpr {
+			// Check if this is array slicing (index is a RangeExpr)
+			if node.index is ast.RangeExpr {
+				// Array slicing: arr[start..end]
+				// Call the array.slice() method
+				result_var := g.new_local('__slice_result', expected)
+
+				// Get the array we're slicing
+				g.get(result_var)
+				g.expr(node.left, node.left_type)
+
+				// Get start index (or 0 if missing)
+				if node.index.has_low {
+					g.expr(node.index.low, ast.int_type)
+				} else {
+					g.literalint(0, ast.int_type)
+				}
+
+				// Get end index (or max_i32 if missing)
+				if node.index.has_high {
+					g.expr(node.index.high, ast.int_type)
+				} else {
+					// Use max_i32 to indicate "end of array"
+					g.literalint(2147483647, ast.int_type) // max_i32
+				}
+
+				// Call slice() method
+				// The method returns a new array struct
+				g.func.call('array.slice')
+
+				// Store the result
+				arr_struct_size, _ := g.pool.type_size(expected)
+				g.func.i32_const(i32(arr_struct_size))
+				g.func.call('vmemcpy')
+				g.func.drop()
+
+				// Return the result
+				g.get(result_var)
+				return
+			}
+
+			// Regular array indexing
 			mut direct_array_access := g.is_direct_array_access || node.is_direct
 			mut tmp_voidptr_var := wasm.LocalIndex(-1)
 

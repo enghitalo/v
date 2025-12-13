@@ -1,0 +1,49 @@
+// Benchmark for array operations in WASM
+// This benchmark tests array creation and access performance
+
+import time
+
+fn benchmark_array_creation() i64 {
+	sw := time.new_stopwatch()
+	for _ in 0 .. 10000 {
+		_ := [1, 2, 3, 4, 5]
+	}
+	return sw.elapsed().microseconds()
+}
+
+fn benchmark_array_access() i64 {
+	arr := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+	sw := time.new_stopwatch()
+	mut sum := 0
+	for _ in 0 .. 10000 {
+		for i in 0 .. arr.len {
+			sum += arr[i]
+		}
+	}
+	return sw.elapsed().microseconds()
+}
+
+fn benchmark_array_append() i64 {
+	sw := time.new_stopwatch()
+	for _ in 0 .. 1000 {
+		mut arr := []int{}
+		for i in 0 .. 10 {
+			arr << i
+		}
+	}
+	return sw.elapsed().microseconds()
+}
+
+fn main() {
+	println('Array Creation Benchmark:')
+	creation_time := benchmark_array_creation()
+	println('Time: ${creation_time} us')
+	
+	println('Array Access Benchmark:')
+	access_time := benchmark_array_access()
+	println('Time: ${access_time} us')
+	
+	println('Array Append Benchmark:')
+	append_time := benchmark_array_append()
+	println('Time: ${append_time} us')
+}

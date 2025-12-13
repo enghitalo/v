@@ -15,10 +15,10 @@ pub fn (mut g Gen) as_numtype(a wasm.ValType) wasm.NumType {
 	return unsafe { wasm.NumType(a) }
 }
 
-// unwraps int_literal to i64_t
+// unwraps int_literal to wasm register width (i32 on wasm)
 pub fn (mut g Gen) get_wasm_type_int_literal(typ_ ast.Type) wasm.ValType {
 	if typ_ == ast.int_literal_type_idx {
-		return wasm.ValType.i64_t
+		return wasm.ValType.i32_t
 	}
 	return g.get_wasm_type(typ_)
 }
@@ -41,11 +41,7 @@ pub fn (mut g Gen) get_wasm_type(typ_ ast.Type) wasm.ValType {
 				wasm.ValType.i32_t
 			}
 			ast.int_type_idx {
-				$if new_int ? && x64 {
-					wasm.ValType.i64_t
-				} $else {
-					wasm.ValType.i32_t
-				}
+				wasm.ValType.i32_t
 			}
 			ast.i64_type_idx, ast.u64_type_idx {
 				wasm.ValType.i64_t
