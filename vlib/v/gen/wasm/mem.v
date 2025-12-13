@@ -1043,7 +1043,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 
 			for f in init.init_fields {
 				field := ts.find_field(f.name) or {
-					g.w_error('could not find field `${f.name}` on init')
+					g.w_error('field `${f.name}` not found in struct `${ts.name}`')
 				}
 
 				offset := si.offsets[field.i]

@@ -729,8 +729,16 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 
 pub fn (mut g Gen) get_field_offset(typ ast.Type, name string) int {
 	ts := g.table.sym(typ)
-	field := ts.find_field(name) or { g.w_error('could not find field `${name}` on init') }
-	si := g.pool.type_struct_info(typ) or { panic('unreachable') }
+	
+	si := g.pool.type_struct_info(typ) or {
+		g.w_error('cannot get struct info for type `${ts.name}`: ${err}')
+	}
+	
+	// Find the field index
+	field := ts.find_field(name) or {
+		g.w_error('field `${name}` not found in type `${ts.name}`')
+	}
+	
 	return si.offsets[field.i]
 }
 
