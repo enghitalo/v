@@ -1799,3 +1799,15 @@ fn test_sorted_with_compare() {
 	assert aa == ['hi', '1', '5', '3'], 'aa should stay unmodified'
 	assert bb == ['1', '3', '5', 'hi'], 'bb should be sorted, according to the custom comparison callback fn'
 }
+
+fn test_array_fields() {
+	arr := [1, 2, 3]
+
+	// Test accessing array fields directly
+	println(arr.len)
+	println(arr.cap)
+
+	// Test field access in expression
+	assert arr.len == 3
+	assert arr.cap >= 3
+}
