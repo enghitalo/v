@@ -1095,14 +1095,14 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 				if init.has_len || init.has_cap || init.has_init {
 					// Array init with named params: []int{len: 5, cap: 10, init: 42}
 					// Use __new_array_with_default(len, cap, elm_size, default_value_ptr)
-					
+
 					// Push len (required or 0)
 					if init.has_len {
 						g.expr(init.len_expr, ast.int_type)
 					} else {
 						g.literalint(0, ast.int_type)
 					}
-					
+
 					// Push cap (or use len if not specified)
 					if init.has_cap {
 						g.expr(init.cap_expr, ast.int_type)
@@ -1111,28 +1111,28 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 					} else {
 						g.literalint(0, ast.int_type)
 					}
-					
+
 					// Push element_size
 					g.literalint(elm_size, ast.int_type)
-					
+
 					// Push init value pointer (or 0 for no default)
 					if init.has_init {
 						// Allocate space on stack for init value
 						mut init_var := g.new_local('__init', elm_typ)
 						init_var_addr := g.ensure_var_addressable(mut init_var)
-						
+
 						// Store init value
 						g.get(init_var_addr)
 						g.expr(init.init_expr, elm_typ)
 						g.store(elm_typ, 0)
-						
+
 						// Push address of init value
 						g.get(init_var_addr)
 					} else {
 						g.literalint(0, ast.int_type)
 					}
-					
-					g.func.call('builtin____new_array_with_default')
+
+					g.func.call('__new_array_with_default')
 				} else {
 					// Regular array initialization: [1, 2, 3]
 					// Calculate array length
@@ -1142,7 +1142,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 					g.literalint(arr_len, ast.int_type) // len
 					g.literalint(arr_len, ast.int_type) // cap (same as len for now)
 					g.literalint(elm_size, ast.int_type) // element_size
-					g.func.call('builtin____new_array')
+					g.func.call('__new_array')
 				}
 
 				// Store the returned array struct
