@@ -837,7 +837,7 @@ pub fn (mut g Gen) expr(node ast.Expr, expected ast.Type) {
 
 				// Call slice() method
 				// The method returns a new array struct
-				g.func.call('array_slice')
+				g.func.call('array.slice')
 
 				// Store the result
 				arr_struct_size, _ := g.pool.type_size(expected)
