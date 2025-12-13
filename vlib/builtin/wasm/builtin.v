@@ -117,3 +117,53 @@ pub fn vmemset(s voidptr, c int, n isize) voidptr {
 	}
 	return s
 }
+
+// vmemcmp compares two memory regions byte by byte
+// Returns 0 if equal, <0 if a < b, >0 if a > b
+// This is an efficient WASM-optimized implementation
+@[unsafe]
+pub fn vmemcmp(a voidptr, b voidptr, n int) int {
+	if n == 0 {
+		return 0
+	}
+	if a == b {
+		return 0
+	}
+	
+	a_bytes := unsafe { &u8(a) }
+	b_bytes := unsafe { &u8(b) }
+	
+	// Process 8 bytes at a time for better performance on WASM
+	mut i := 0
+	n_aligned := n - (n % 8)
+	
+	// Compare 8 bytes at a time using i64 comparison
+	for i < n_aligned {
+		a_i64 := unsafe { &i64(a_bytes + i) }
+		b_i64 := unsafe { &i64(b_bytes + i) }
+		if unsafe { *a_i64 != *b_i64 } {
+			// Fall back to byte-by-byte comparison for this chunk
+			for j in 0 .. 8 {
+				idx := i + j
+				a_byte := unsafe { a_bytes[idx] }
+				b_byte := unsafe { b_bytes[idx] }
+				if a_byte != b_byte {
+					return int(a_byte) - int(b_byte)
+				}
+			}
+		}
+		i += 8
+	}
+	
+	// Handle remaining bytes
+	for i < n {
+		a_byte := unsafe { a_bytes[i] }
+		b_byte := unsafe { b_bytes[i] }
+		if a_byte != b_byte {
+			return int(a_byte) - int(b_byte)
+		}
+		i++
+	}
+	
+	return 0
+}
