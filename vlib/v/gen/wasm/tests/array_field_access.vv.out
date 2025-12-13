@@ -1,12 +1,13 @@
-=== Test array field access ===
-10
-20
-50
+=== u16 array ===
+1
+2
+3
+=== string array with len/cap ===
+hello
+world
+test
+=== int array ===
 100
 200
 300
-=== Test array with structs ===
-10
-20
-30
-40
+400

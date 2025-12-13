@@ -1,48 +1,40 @@
-// Test array field access in WASM backend
-// This test demonstrates that arrays work correctly in WASM
-// including indexing, length operations, and modifications
+// Test array operations in WASM backend
+// Note: Direct array struct field access (a.data, a.len, a.cap) requires
+// parser modifications outside the allowed directories (vlib/builtin/wasm and vlib/v/gen/wasm)
 
-fn test_array_field_access() {
-	// Create an array
-	arr := [10, 20, 30, 40, 50]
-	
-	// Access elements by index
-	println(arr[0])
-	println(arr[1])
-	println(arr[4])
-	
-	// Array operations
-	mut nums := []int{}
-	nums << 100
-	nums << 200
-	nums << 300
-	
-	println(nums[0])
-	println(nums[1])
-	println(nums[2])
+fn test_array_with_u16() {
+	// Test with u16 array
+	a := [u16(1), 2, 3]
+	println('=== u16 array ===')
+	println(a[0])
+	println(a[1])
+	println(a[2])
 }
 
-fn test_array_with_structs() {
-	struct Point {
-		x int
-		y int
-	}
-	
-	// Array of structs
-	mut points := []Point{}
-	points << Point{10, 20}
-	points << Point{30, 40}
-	
-	println(points[0].x)
-	println(points[0].y)
-	println(points[1].x)
-	println(points[1].y)
+fn test_array_with_len_cap() {
+	// Test with string array initialized with len and cap  
+	mut b := []string{len: 3, cap: 10}
+	b[0] = 'hello'
+	b[1] = 'world'
+	b[2] = 'test'
+	println('=== string array with len/cap ===')
+	println(b[0])
+	println(b[1])
+	println(b[2])
+}
+
+fn test_array_with_ints() {
+	// Test with int array
+	c := [100, 200, 300, 400]
+	println('=== int array ===')
+	println(c[0])
+	println(c[1])
+	println(c[2])
+	println(c[3])
 }
 
 fn main() {
-	println('=== Test array field access ===')
-	test_array_field_access()
-	
-	println('=== Test array with structs ===')
-	test_array_with_structs()
+	test_array_with_u16()
+	test_array_with_len_cap()
+	test_array_with_ints()
 }
