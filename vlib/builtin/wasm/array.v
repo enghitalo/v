@@ -2,7 +2,7 @@ module builtin
 
 // Helper functions for array operations
 @[inline]
-fn __at_least_one(how_many u64) u64 {
+fn __at_least_one(how_many isize) isize {
 	// handle the case for allocating memory for empty structs, which have sizeof(EmptyStruct) == 0
 	// in this case, just allocate a single byte, avoiding the panic for malloc(0)
 	if how_many == 0 {
@@ -53,9 +53,14 @@ fn __new_array(mylen int, cap int, elm_size int) array {
 	panic_on_negative_len(mylen)
 	panic_on_negative_cap(cap)
 	cap_ := if cap < mylen { mylen } else { cap }
+	mut data_ptr := voidptr(0)
+	if cap_ > 0 {
+		data_ptr = unsafe { vcalloc(isize(cap_ * elm_size)) }
+	}
+
 	arr := array{
 		element_size: elm_size
-		data:         vcalloc(u64(cap_) * u64(elm_size))
+		data:         data_ptr
 		len:          mylen
 		cap:          cap_
 	}
@@ -71,11 +76,15 @@ fn __new_array_with_default(mylen int, cap int, elm_size int, val voidptr) array
 		len:          mylen
 		cap:          cap_
 	}
-	total_size := u64(cap_) * u64(elm_size)
-	if cap_ > 0 && mylen == 0 {
-		arr.data = unsafe { malloc(__at_least_one(total_size)) }
+	total_size := isize(cap_ * elm_size)
+	if cap_ > 0 {
+		if mylen == 0 {
+			arr.data = unsafe { malloc(__at_least_one(total_size)) }
+		} else {
+			arr.data = unsafe { vcalloc(total_size) }
+		}
 	} else {
-		arr.data = vcalloc(total_size)
+		arr.data = voidptr(0)
 	}
 	if val != 0 {
 		mut eptr := &u8(arr.data)
@@ -114,7 +123,7 @@ pub fn (a array) last() voidptr {
 		panic('array.last: array is empty')
 	}
 	unsafe {
-		return &u8(a.data) + u64(a.len - 1) * u64(a.element_size)
+		return &u8(a.data) + isize(a.len - 1) * isize(a.element_size)
 	}
 }
 
@@ -126,7 +135,7 @@ pub fn (a &array) clone() array {
 // recursively clone given array - `unsafe` when called directly because depth is not checked
 @[unsafe]
 pub fn (a &array) clone_to_depth(depth int) array {
-	source_capacity_in_bytes := u64(a.cap) * u64(a.element_size)
+	source_capacity_in_bytes := isize(a.cap * a.element_size)
 	mut arr := array{
 		element_size: a.element_size
 		data:         vcalloc(source_capacity_in_bytes)
@@ -166,7 +175,7 @@ pub fn (a &array) clone_to_depth(depth int) array {
 	}
 	// For primitive types or shallow copy, just copy the data
 	if a.len > 0 {
-		unsafe { vmemcpy(arr.data, a.data, u64(a.len) * u64(a.element_size)) }
+		unsafe { vmemcpy(arr.data, a.data, isize(a.len * a.element_size)) }
 	}
 	return arr
 }
@@ -175,7 +184,7 @@ pub fn (a &array) clone_to_depth(depth int) array {
 @[unsafe]
 pub fn (a array) get_unsafe(i int) voidptr {
 	unsafe {
-		return &u8(a.data) + u64(i) * u64(a.element_size)
+		return &u8(a.data) + isize(i) * isize(a.element_size)
 	}
 }
 
@@ -183,7 +192,7 @@ pub fn (a array) get_unsafe(i int) voidptr {
 @[unsafe]
 pub fn (a array) set_unsafe(i int, val voidptr) {
 	unsafe {
-		dest := &u8(a.data) + u64(i) * u64(a.element_size)
+		dest := &u8(a.data) + isize(i) * isize(a.element_size)
 		vmemcpy(dest, val, a.element_size)
 	}
 }
@@ -193,7 +202,7 @@ pub fn (a array) set_unsafe(i int, val voidptr) {
 // The capacity is set to the number of elements in the slice.
 // Slices share memory with the original array (no copying).
 fn (a array) slice(start int, _end int) array {
-	end := if _end == max_i64 || _end == max_i32 { a.len } else { _end }
+	end := if _end < 0 { a.len } else { _end }
 	$if !no_bounds_checking {
 		if start > end {
 			panic('array.slice: invalid slice index (start>end)')
@@ -205,7 +214,7 @@ fn (a array) slice(start int, _end int) array {
 			panic('array.slice: slice bounds out of range (start<0)')
 		}
 	}
-	offset := u64(start) * u64(a.element_size)
+	offset := isize(start) * isize(a.element_size)
 	data := unsafe { &u8(a.data) + offset }
 	l := end - start
 	res := array{
@@ -225,7 +234,7 @@ fn (a array) slice(start int, _end int) array {
 // that get the last 3 elements of the array.
 // This function always returns a valid array (never panics).
 fn (a array) slice_ni(_start int, _end int) array {
-	mut end := if _end == max_i64 || _end == max_i32 { a.len } else { _end }
+	mut end := if _end < 0 { a.len } else { _end }
 	mut start := _start
 	if start < 0 {
 		start = a.len + start
@@ -251,7 +260,7 @@ fn (a array) slice_ni(_start int, _end int) array {
 		res.len = 0
 	}
 	res.cap = res.len
-	offset := u64(start) * u64(a.element_size)
+	offset := isize(start) * isize(a.element_size)
 	res.data = unsafe { &u8(a.data) + offset }
 	res.offset = a.offset + int(offset)
 	return res
@@ -274,5 +283,5 @@ fn (a array) eq(b array) bool {
 	}
 	// Use efficient vmemcmp for byte-by-byte comparison
 	bytes_to_compare := a.len * a.element_size
-	return vmemcmp(a.data, b.data, bytes_to_compare) == 0
+	return unsafe { vmemcmp(a.data, b.data, bytes_to_compare) } == 0
 }

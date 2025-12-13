@@ -123,7 +123,7 @@ pub fn (mut g Gen) dbg_type_name(name string, typ ast.Type) string {
 }
 
 pub fn unpack_literal_int(typ ast.Type) ast.Type {
-	return if typ == ast.int_literal_type { ast.i64_type } else { typ }
+	return if typ == ast.int_literal_type { ast.int_type } else { typ }
 }
 
 pub fn (g &Gen) get_ns_plus_name(default_name string, attrs []ast.Attr) (string, string) {
@@ -185,7 +185,16 @@ pub fn (mut g Gen) fn_decl(node ast.FnDecl) {
 	}
 
 	name := if node.is_method {
-		'${g.table.get_type_name(node.receiver.typ)}.${node.name}'
+		mut recv_type := node.receiver.typ
+		mut recv_type_name := g.table.get_type_name(recv_type)
+		// For array methods, normalize to 'array' type name (after dereferencing pointers)
+		if recv_type.is_ptr() {
+			recv_type = recv_type.deref()
+		}
+		if g.table.type_kind(recv_type) in [.array, .array_fixed] {
+			recv_type_name = 'array'
+		}
+		'${recv_type_name}.${node.name}'
 	} else {
 		node.name
 	}
@@ -383,6 +392,11 @@ pub fn (mut g Gen) cast(typ ast.Type, expected_type ast.Type) {
 	wtyp := g.as_numtype(g.get_wasm_type_int_literal(typ))
 	expected_wtype := g.as_numtype(g.get_wasm_type_int_literal(expected_type))
 
+	// Avoid emitting conversions when types already align; prevents redundant wrap_i64
+	if wtyp == expected_wtype {
+		return
+	}
+
 	g.func.cast(wtyp, typ.is_signed(), expected_wtype)
 }
 
@@ -423,10 +437,10 @@ pub fn (mut g Gen) infix_expr(node ast.InfixExpr, expected ast.Type) {
 	// Special handling for array == and != operators
 	if node.op in [.eq, .ne] && g.table.type_kind(node.left_type) == .array {
 		// Array comparison: arr1 == arr2 or arr1 != arr2
-		// Call the builtin__array_eq() function
+		// Call the array.eq() method
 		g.expr(node.left, node.left_type)
 		g.expr(node.right, node.right_type)
-		g.func.call('array_eq')
+		g.func.call('array.eq')
 
 		// If it's !=, negate the result
 		if node.op == .ne {
@@ -584,7 +598,16 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 	is_print := name in ['panic', 'println', 'print', 'eprintln', 'eprint']
 
 	if node.is_method {
-		name = '${g.table.get_type_name(node.receiver_type)}.${node.name}'
+		mut recv_type := node.receiver_type
+		mut recv_type_name := g.table.get_type_name(recv_type)
+		// For array methods, normalize to 'array' type name (after dereferencing pointers)
+		if recv_type.is_ptr() {
+			recv_type = recv_type.deref()
+		}
+		if g.table.type_kind(recv_type) in [.array, .array_fixed] {
+			recv_type_name = 'array'
+		}
+		name = '${recv_type_name}.${node.name}'
 	}
 
 	if node.language in [.js, .wasm] {
@@ -640,7 +663,7 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 		} else {
 			// Normal case: just pass the receiver as-is
 			if node.receiver_type == ast.int_literal_type && node.left is ast.IntegerLiteral {
-				g.literal((node.left as ast.IntegerLiteral).val, ast.i64_type)
+				g.literal((node.left as ast.IntegerLiteral).val, ast.int_type)
 			} else {
 				g.expr(node.left, node.receiver_type)
 			}
@@ -679,7 +702,7 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 			// another hack alert!
 			if node.expected_arg_types[idx] == ast.int_literal_type && expr is ast.IntegerLiteral {
 				lit := expr as ast.IntegerLiteral
-				g.literal(lit.val, ast.i64_type)
+				g.literal(lit.val, ast.int_type)
 			} else {
 				g.expr(expr, node.expected_arg_types[idx])
 			}
@@ -729,16 +752,29 @@ pub fn (mut g Gen) call_expr(node ast.CallExpr, expected ast.Type, existing_rvar
 
 pub fn (mut g Gen) get_field_offset(typ ast.Type, name string) int {
 	ts := g.table.sym(typ)
-	
+
+	// Special handling for array types - they have data/len/cap/etc fields
+	if g.table.type_kind(typ) in [.array, .array_fixed] {
+		match name {
+			'data' { return 0 }       // offset of data pointer in array struct
+			'len' { return 8 }        // offset of len in array struct (ptr(8) + offset(8))
+			'cap' { return 12 }       // offset of cap in array struct
+			'offset' { return 4 }     // offset field for slices
+			'flags' { return 16 }     // offset of flags
+			'element_size' { return 20 } // offset of element_size
+			else { g.w_error('unknown array field `${name}`') }
+		}
+	}
+
 	si := g.pool.type_struct_info(typ) or {
 		g.w_error('cannot get struct info for type `${ts.name}`: ${err}')
 	}
-	
+
 	// Find the field index
 	field := ts.find_field(name) or {
 		g.w_error('field `${name}` not found in type `${ts.name}`')
 	}
-	
+
 	return si.offsets[field.i]
 }
 

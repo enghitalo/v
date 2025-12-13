@@ -1091,6 +1091,15 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 				elm_typ := init.elem_type
 				elm_size, _ := g.pool.type_size(elm_typ)
 
+				// Allocate a stack slot for the returned array struct and pass it as sret
+				mut array_struct_tmp := g.new_local('__tmp<array_struct>', v.typ)
+				array_struct_tmp = g.ensure_var_addressable(mut array_struct_tmp)
+				array_struct_ptr := g.func.new_local_named(.i32_t, '__tmp<array_struct_ptr>')
+
+				// Return buffer is first argument (sret)
+				g.ref(array_struct_tmp)
+				g.func.local_tee(array_struct_ptr)
+
 				// Check if using named parameters (len:, cap:, init:)
 				if init.has_len || init.has_cap || init.has_init {
 					// Array init with named params: []int{len: 5, cap: 10, init: 42}
@@ -1146,12 +1155,8 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 				}
 
 				// Store the returned array struct
-				array_struct_tmp := g.func.new_local_named(.i32_t, '__tmp<array_struct>')
-				g.func.local_tee(array_struct_tmp)
-
-				// Copy array struct to destination
 				g.get(v)
-				g.func.local_get(array_struct_tmp)
+				g.func.local_get(array_struct_ptr)
 				arr_struct_size, _ := g.pool.type_size(v.typ)
 				g.func.i32_const(i32(arr_struct_size))
 				g.func.call('vmemcpy')
@@ -1162,7 +1167,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 				if arr_len > 0 && !init.has_init {
 					// Get pointer to array data
 					data_ptr := g.func.new_local_named(.i32_t, '__tmp<array_data>')
-					g.func.local_get(array_struct_tmp)
+					g.func.local_get(array_struct_ptr)
 					g.load(ast.voidptr_type, 0) // Load data pointer from array struct
 					g.func.local_set(data_ptr)
 
