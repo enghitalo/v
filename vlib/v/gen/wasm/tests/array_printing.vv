@@ -13,11 +13,19 @@ fn test_array_printing_strings() {
 }
 
 fn test_array_printing_ints() {
-	// Test int array - will print as array struct
-	// Note: Only string arrays have str() method for now
-	// Int arrays will be printed differently
+	// Test int array printing
 	nums := [1, 2, 3, 4, 5]
-	for num in nums {
-		println(num)
-	}
+	println(nums)
+	
+	// Test empty int array
+	empty := []int{}
+	println(empty)
+	
+	// Test single element
+	single := [42]
+	println(single)
+	
+	// Test negative numbers
+	negatives := [-10, -5, 0, 5, 10]
+	println(negatives)
 }

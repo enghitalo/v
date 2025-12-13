@@ -349,3 +349,97 @@ pub fn (a []string) str() string {
 		len: total_len
 	}
 }
+
+// str returns a string representation of int arrays
+// Format: [1, 2, 3]
+pub fn (a []int) str() string {
+	if a.len == 0 {
+		return '[]'
+	}
+	
+	// Build the string manually
+	// Estimate size: each int can be up to 11 chars (-2147483648), plus commas and spaces
+	mut total_len := 2 // []
+	total_len += a.len * 12 // rough estimate per element
+	total_len += (a.len - 1) * 2 // ', ' separators
+	
+	// Allocate memory for result
+	mut result_data := unsafe { malloc(total_len + 1) }
+	mut pos := 0
+	
+	// Write '['
+	unsafe {
+		result_data[pos] = `[`
+	}
+	pos++
+	
+	// Write each element
+	for i in 0 .. a.len {
+		// Write comma and space if not first
+		if i > 0 {
+			unsafe {
+				result_data[pos] = `,`
+				result_data[pos + 1] = ` `
+			}
+			pos += 2
+		}
+		
+		// Convert int to string
+		val := a[i]
+		mut num_str := ''
+		if val == 0 {
+			num_str = '0'
+		} else {
+			mut n := val
+			mut is_negative := false
+			if n < 0 {
+				is_negative = true
+				n = -n
+			}
+			
+			// Convert to string
+			mut digits := []u8{}
+			for n > 0 {
+				digits << u8(n % 10 + 48) // ASCII '0' = 48
+				n /= 10
+			}
+			
+			// Build the number string
+			if is_negative {
+				unsafe {
+					result_data[pos] = `-`
+				}
+				pos++
+			}
+			
+			// Write digits in reverse order
+			for j := digits.len - 1; j >= 0; j-- {
+				unsafe {
+					result_data[pos] = digits[j]
+				}
+				pos++
+			}
+			continue
+		}
+		
+		// Write '0' for zero case
+		for c in num_str {
+			unsafe {
+				result_data[pos] = c
+			}
+			pos++
+		}
+	}
+	
+	// Write ']'
+	unsafe {
+		result_data[pos] = `]`
+		result_data[pos + 1] = 0 // null terminator
+	}
+	
+	// Return as string
+	return string{
+		str: result_data
+		len: pos
+	}
+}
