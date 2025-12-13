@@ -55,7 +55,7 @@ fn __new_array(mylen int, cap int, elm_size int) array {
 	cap_ := if cap < mylen { mylen } else { cap }
 	arr := array{
 		element_size: elm_size
-		data:         unsafe { vcalloc(u64(cap_) * u64(elm_size)) }
+		data:         vcalloc(u64(cap_) * u64(elm_size))
 		len:          mylen
 		cap:          cap_
 	}
@@ -75,7 +75,7 @@ fn __new_array_with_default(mylen int, cap int, elm_size int, val voidptr) array
 	if cap_ > 0 && mylen == 0 {
 		arr.data = unsafe { malloc(__at_least_one(total_size)) }
 	} else {
-		arr.data = unsafe { vcalloc(total_size) }
+		arr.data = vcalloc(total_size)
 	}
 	if val != 0 {
 		mut eptr := &u8(arr.data)
