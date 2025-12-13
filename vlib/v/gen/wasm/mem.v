@@ -1087,26 +1087,40 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 		ast.ArrayInit {
 			if !init.is_fixed {
 				// Dynamic array initialization
-				// For now, we'll manually construct the array struct
-				// instead of calling __new_array (which may not be available)
+				// Use __new_array() function to create the array struct
 				elm_typ := init.elem_type
 				elm_size, _ := g.pool.type_size(elm_typ)
 
 				// Calculate array length
 				arr_len := init.exprs.len
 
-				// Allocate data for array elements if needed
-				if arr_len > 0 {
-					// Allocate memory for data: len * element_size
-					total_size := arr_len * elm_size
-					g.literalint(total_size, ast.int_type)
-					g.func.call('vcalloc') // Returns pointer to zeroed memory
+				// Call __new_array(len, cap, element_size) to create array struct
+				g.literalint(arr_len, ast.int_type) // len
+				g.literalint(arr_len, ast.int_type) // cap (same as len for now)
+				g.literalint(elm_size, ast.int_type) // element_size
+				g.func.call('builtin____new_array')
 
-					// Store data pointer temporarily
+				// Store the returned array struct
+				array_struct_tmp := g.func.new_local_named(.i32_t, '__tmp<array_struct>')
+				g.func.local_tee(array_struct_tmp)
+
+				// Copy array struct to destination
+				g.get(v)
+				g.func.local_get(array_struct_tmp)
+				arr_struct_size, _ := g.pool.type_size(v.typ)
+				g.func.i32_const(i32(arr_struct_size))
+				g.func.call('vmemcpy')
+				g.func.drop()
+
+				// Now populate the data if there are elements
+				if arr_len > 0 {
+					// Get pointer to array data
 					data_ptr := g.func.new_local_named(.i32_t, '__tmp<array_data>')
+					g.func.local_get(array_struct_tmp)
+					g.load(ast.voidptr_type, 0) // Load data pointer from array struct
 					g.func.local_set(data_ptr)
 
-					// Populate the data
+					// Populate each element
 					for i, e in init.exprs {
 						elem_addr := g.func.new_local_named(.i32_t, '__tmp<elem_addr>')
 						g.func.local_get(data_ptr)
@@ -1136,45 +1150,7 @@ pub fn (mut g Gen) set_with_expr(init ast.Expr, v Var) {
 							}
 							g.set_with_expr(e, target_var)
 						}
-					} // Now build the array struct on stack
-					// Store data pointer (offset 0)
-					g.get(v)
-					g.func.local_get(data_ptr)
-					g.store(ast.voidptr_type, 0)
-
-					// Store offset = 0 (offset 4)
-					g.get(v)
-					g.literalint(0, ast.int_type)
-					g.store(ast.int_type, 4)
-
-					// Store len (offset 8)
-					g.get(v)
-					g.literalint(arr_len, ast.int_type)
-					g.store(ast.int_type, 8)
-
-					// Store cap (offset 12)
-					g.get(v)
-					g.literalint(arr_len, ast.int_type)
-					g.store(ast.int_type, 12)
-
-					// Store flags = 0 (offset 16)
-					g.get(v)
-					g.literalint(0, ast.int_type)
-					g.store(ast.int_type, 16)
-
-					// Store element_size (offset 20)
-					g.get(v)
-					g.literalint(elm_size, ast.int_type)
-					g.store(ast.int_type, 20)
-				} else {
-					// Empty array - zero out the struct
-					arr_size, _ := g.pool.type_size(v.typ)
-					g.zero_fill(v, arr_size)
-
-					// Still need to set element_size
-					g.get(v)
-					g.literalint(elm_size, ast.int_type)
-					g.store(ast.int_type, 20)
+					}
 				}
 				return
 			}
