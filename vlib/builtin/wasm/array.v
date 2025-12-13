@@ -243,3 +243,24 @@ fn (a array) slice_ni(_start int, _end int) array {
 	res.offset = a.offset + int(offset)
 	return res
 }
+
+// eq checks if two arrays are equal by comparing their lengths and elements.
+// This is used for the == operator.
+fn (a array) eq(b array) bool {
+	// First check if lengths are equal
+	if a.len != b.len {
+		return false
+	}
+	// If both are empty, they're equal
+	if a.len == 0 {
+		return true
+	}
+	// Check if element sizes match
+	if a.element_size != b.element_size {
+		return false
+	}
+	// Compare elements using vmemcmp
+	// We compare byte-by-byte for the entire data
+	bytes_to_compare := u64(a.len) * u64(a.element_size)
+	return unsafe { vmemcmp(a.data, b.data, int(bytes_to_compare)) == 0 }
+}

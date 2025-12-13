@@ -1,0 +1,11 @@
+=== Equal arrays ===
+arrays are equal
+=== Different arrays ===
+arrays are different
+=== Different lengths ===
+arrays have different lengths
+=== Empty arrays ===
+empty arrays are equal
+=== String arrays ===
+string arrays are equal
+string arrays are different

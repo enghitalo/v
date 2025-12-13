@@ -420,6 +420,21 @@ pub fn (mut g Gen) infix_expr(node ast.InfixExpr, expected ast.Type) {
 		return
 	}
 
+	// Special handling for array == and != operators
+	if node.op in [.eq, .ne] && g.table.type_kind(node.left_type) == .array {
+		// Array comparison: arr1 == arr2 or arr1 != arr2
+		// Call the builtin__array_eq() function
+		g.expr(node.left, node.left_type)
+		g.expr(node.right, node.right_type)
+		g.func.call('builtin__array_eq')
+		
+		// If it's !=, negate the result
+		if node.op == .ne {
+			g.func.eqz(.i32_t)
+		}
+		return
+	}
+
 	if node.op in [.logical_or, .and] {
 		temp := g.func.new_local_named(.i32_t, '__tmp<bool>')
 		{
