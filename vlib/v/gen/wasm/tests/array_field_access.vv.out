@@ -1,12 +1,22 @@
-u16 array
-7f48007f4fd0
+u16 array fields:
+len: 
 3
+cap: 
 3
+offset: 
 0
+element_size: 
 2
-int array
-7f48007f4fe0
+first element: 
+1
+int array fields:
+len: 
 4
+cap: 
 4
+offset: 
 0
+element_size: 
 4
+first element: 
+100
