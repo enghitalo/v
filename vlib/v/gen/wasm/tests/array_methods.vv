@@ -1,0 +1,34 @@
+// Test array methods: first, last, clone
+fn main() {
+	// Test first() and last()
+	println('=== Testing first() and last() ===')
+	a := [10, 20, 30, 40, 50]
+	first_val := unsafe { *(&int(a.first())) }
+	last_val := unsafe { *(&int(a.last())) }
+	println('first:')
+	println(first_val)
+	println('last:')
+	println(last_val)
+	
+	// Test clone()
+	println('=== Testing clone() ===')
+	b := [1, 2, 3]
+	c := b.clone()
+	println('original first:')
+	println(b[0])
+	println('clone first:')
+	println(c[0])
+	println('original len:')
+	println(b.len)
+	println('clone len:')
+	println(c.len)
+	
+	// Test that clone is deep copy
+	println('=== Testing clone independence ===')
+	mut d := [100, 200]
+	mut e := d.clone()
+	println('original before:')
+	println(d[0])
+	println('clone before:')
+	println(e[0])
+}

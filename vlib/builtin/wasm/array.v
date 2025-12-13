@@ -97,3 +97,80 @@ fn __new_array_with_default(mylen int, cap int, elm_size int, val voidptr) array
 	}
 	return arr
 }
+
+// first returns the first element of the array.
+// If the array is empty, this will panic.
+pub fn (a array) first() voidptr {
+	if a.len == 0 {
+		panic('array.first: array is empty')
+	}
+	return a.data
+}
+
+// last returns the last element of the array.
+// If the array is empty, this will panic.
+pub fn (a array) last() voidptr {
+	if a.len == 0 {
+		panic('array.last: array is empty')
+	}
+	unsafe {
+		return &u8(a.data) + u64(a.len - 1) * u64(a.element_size)
+	}
+}
+
+// clone returns a deep copy of the array.
+pub fn (a &array) clone() array {
+	return unsafe { a.clone_to_depth(0) }
+}
+
+// recursively clone given array - `unsafe` when called directly because depth is not checked
+@[unsafe]
+pub fn (a &array) clone_to_depth(depth int) array {
+	source_capacity_in_bytes := u64(a.cap) * u64(a.element_size)
+	mut arr := array{
+		element_size: a.element_size
+		data:         vcalloc(source_capacity_in_bytes)
+		len:          a.len
+		cap:          a.cap
+	}
+	// Recursively clone-generated elements if array element is array type
+	if depth > 0 && a.element_size == sizeof(array) && a.len >= 0 && a.cap >= a.len {
+		ar := array{}
+		asize := int(sizeof(array))
+		for i in 0 .. a.len {
+			unsafe { vmemcpy(&ar, a.get_unsafe(i), asize) }
+			ar_clone := unsafe { ar.clone_to_depth(depth - 1) }
+			unsafe { arr.set_unsafe(i, &ar_clone) }
+		}
+		return arr
+	} else if depth > 0 && a.element_size == sizeof(string) && a.len >= 0 && a.cap >= a.len {
+		for i in 0 .. a.len {
+			str_ptr := unsafe { &string(a.get_unsafe(i)) }
+			str_clone := (*str_ptr).clone()
+			unsafe { arr.set_unsafe(i, &str_clone) }
+		}
+		return arr
+	}
+	// For primitive types or shallow copy, just copy the data
+	if a.len > 0 {
+		unsafe { vmemcpy(arr.data, a.data, u64(a.len) * u64(a.element_size)) }
+	}
+	return arr
+}
+
+// get_unsafe returns the element at index `i` without bounds checking.
+@[unsafe]
+pub fn (a array) get_unsafe(i int) voidptr {
+	unsafe {
+		return &u8(a.data) + u64(i) * u64(a.element_size)
+	}
+}
+
+// set_unsafe sets the element at index `i` without bounds checking.
+@[unsafe]
+pub fn (a array) set_unsafe(i int, val voidptr) {
+	unsafe {
+		dest := &u8(a.data) + u64(i) * u64(a.element_size)
+		vmemcpy(dest, val, a.element_size)
+	}
+}

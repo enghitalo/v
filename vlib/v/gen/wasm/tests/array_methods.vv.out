@@ -1,0 +1,19 @@
+=== Testing first() and last() ===
+first:
+10
+last:
+50
+=== Testing clone() ===
+original first:
+1
+clone first:
+1
+original len:
+3
+clone len:
+3
+=== Testing clone independence ===
+original before:
+100
+clone before:
+100
