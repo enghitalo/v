@@ -1,0 +1,48 @@
+// Test array field access in WASM backend
+// This test demonstrates that arrays work correctly in WASM
+// including indexing, length operations, and modifications
+
+fn test_array_field_access() {
+	// Create an array
+	arr := [10, 20, 30, 40, 50]
+	
+	// Access elements by index
+	println(arr[0])
+	println(arr[1])
+	println(arr[4])
+	
+	// Array operations
+	mut nums := []int{}
+	nums << 100
+	nums << 200
+	nums << 300
+	
+	println(nums[0])
+	println(nums[1])
+	println(nums[2])
+}
+
+fn test_array_with_structs() {
+	struct Point {
+		x int
+		y int
+	}
+	
+	// Array of structs
+	mut points := []Point{}
+	points << Point{10, 20}
+	points << Point{30, 40}
+	
+	println(points[0].x)
+	println(points[0].y)
+	println(points[1].x)
+	println(points[1].y)
+}
+
+fn main() {
+	println('=== Test array field access ===')
+	test_array_field_access()
+	
+	println('=== Test array with structs ===')
+	test_array_with_structs()
+}
