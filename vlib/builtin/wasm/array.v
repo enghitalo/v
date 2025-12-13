@@ -13,14 +13,14 @@ fn __at_least_one(how_many u64) u64 {
 
 fn panic_on_negative_len(len int) {
 	if len < 0 {
-		panic('negative array length: ${len}')
+		panic('negative array length')
 	}
 }
 
 @[inline]
 fn panic_on_negative_cap(cap int) {
 	if cap < 0 {
-		panic('negative array capacity: ${cap}')
+		panic('negative array capacity')
 	}
 }
 
@@ -275,171 +275,4 @@ fn (a array) eq(b array) bool {
 	// Use efficient vmemcmp for byte-by-byte comparison
 	bytes_to_compare := a.len * a.element_size
 	return vmemcmp(a.data, b.data, bytes_to_compare) == 0
-}
-
-// str returns a string representation of string arrays
-// Format: ['elem1', 'elem2', 'elem3']
-pub fn (a []string) str() string {
-	if a.len == 0 {
-		return '[]'
-	}
-	// Build the string manually without using string interpolation or builders
-	// Calculate total size needed
-	mut total_len := 2 // []
-	for i in 0 .. a.len {
-		s := a[i]
-		total_len += s.len + 2 // quotes
-		if i > 0 {
-			total_len += 2 // ', '
-		}
-	}
-	
-	// Allocate memory for result
-	mut result_data := unsafe { malloc(total_len + 1) }
-	mut pos := 0
-	
-	// Write '['
-	unsafe {
-		result_data[pos] = `[`
-	}
-	pos++
-	
-	// Write each element
-	for i in 0 .. a.len {
-		// Write comma and space if not first
-		if i > 0 {
-			unsafe {
-				result_data[pos] = `,`
-				result_data[pos + 1] = ` `
-			}
-			pos += 2
-		}
-		
-		// Write opening quote
-		unsafe {
-			result_data[pos] = `'`
-		}
-		pos++
-		
-		// Write string content
-		s := a[i]
-		for j in 0 .. s.len {
-			unsafe {
-				result_data[pos] = s.str[j]
-			}
-			pos++
-		}
-		
-		// Write closing quote
-		unsafe {
-			result_data[pos] = `'`
-		}
-		pos++
-	}
-	
-	// Write ']'
-	unsafe {
-		result_data[pos] = `]`
-		result_data[pos + 1] = 0 // null terminator
-	}
-	
-	// Return as string
-	return string{
-		str: result_data
-		len: total_len
-	}
-}
-
-// str returns a string representation of int arrays
-// Format: [1, 2, 3]
-pub fn (a []int) str() string {
-	if a.len == 0 {
-		return '[]'
-	}
-	
-	// Build the string manually
-	// Estimate size: each int can be up to 11 chars (-2147483648), plus commas and spaces
-	mut total_len := 2 // []
-	total_len += a.len * 12 // rough estimate per element
-	total_len += (a.len - 1) * 2 // ', ' separators
-	
-	// Allocate memory for result
-	mut result_data := unsafe { malloc(total_len + 1) }
-	mut pos := 0
-	
-	// Write '['
-	unsafe {
-		result_data[pos] = `[`
-	}
-	pos++
-	
-	// Write each element
-	for i in 0 .. a.len {
-		// Write comma and space if not first
-		if i > 0 {
-			unsafe {
-				result_data[pos] = `,`
-				result_data[pos + 1] = ` `
-			}
-			pos += 2
-		}
-		
-		// Convert int to string
-		val := a[i]
-		mut num_str := ''
-		if val == 0 {
-			num_str = '0'
-		} else {
-			mut n := val
-			mut is_negative := false
-			if n < 0 {
-				is_negative = true
-				n = -n
-			}
-			
-			// Convert to string
-			mut digits := []u8{}
-			for n > 0 {
-				digits << u8(n % 10 + 48) // ASCII '0' = 48
-				n /= 10
-			}
-			
-			// Build the number string
-			if is_negative {
-				unsafe {
-					result_data[pos] = `-`
-				}
-				pos++
-			}
-			
-			// Write digits in reverse order
-			for j := digits.len - 1; j >= 0; j-- {
-				unsafe {
-					result_data[pos] = digits[j]
-				}
-				pos++
-			}
-			continue
-		}
-		
-		// Write '0' for zero case
-		for c in num_str {
-			unsafe {
-				result_data[pos] = c
-			}
-			pos++
-		}
-	}
-	
-	// Write ']'
-	unsafe {
-		result_data[pos] = `]`
-		result_data[pos + 1] = 0 // null terminator
-	}
-	
-	// Return as string
-	return string{
-		str: result_data
-		len: pos
-	}
 }
