@@ -1,0 +1,21 @@
+=== Real World WASM Tests ===
+--- Factorial Tests
+120
+3628800
+1
+--- Fibonacci Tests
+55
+6765
+0
+--- Prime Number Tests
+true
+false
+25
+--- GCD and LCM Tests
+6
+36
+1
+--- Power Tests
+1024
+243
+1

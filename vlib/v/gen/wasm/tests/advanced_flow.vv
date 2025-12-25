@@ -1,0 +1,152 @@
+// Test advanced control flow and function pointers simulation
+// This exercises complex conditionals and branching
+
+fn operation_add(a i64, b i64) i64 {
+	return a + b
+}
+
+fn operation_sub(a i64, b i64) i64 {
+	return a - b
+}
+
+fn operation_mul(a i64, b i64) i64 {
+	return a * b
+}
+
+fn operation_div(a i64, b i64) i64 {
+	if b == 0 {
+		return 0
+	}
+	return a / b
+}
+
+// Simulate function dispatch using if-else chain
+fn calculate(op int, a i64, b i64) i64 {
+	if op == 0 {
+		return operation_add(a, b)
+	} else if op == 1 {
+		return operation_sub(a, b)
+	} else if op == 2 {
+		return operation_mul(a, b)
+	} else if op == 3 {
+		return operation_div(a, b)
+	} else {
+		return 0
+	}
+}
+
+// Complex nested control flow
+fn categorize_number(n i64) int {
+	if n < 0 {
+		if n < -100 {
+			return -3 // very negative
+		} else if n < -10 {
+			return -2 // negative
+		} else {
+			return -1 // slightly negative
+		}
+	} else if n == 0 {
+		return 0 // zero
+	} else {
+		if n > 100 {
+			return 3 // very positive
+		} else if n > 10 {
+			return 2 // positive
+		} else {
+			return 1 // slightly positive
+		}
+	}
+}
+
+// Test various comparison operations
+fn compare_values(a i64, b i64) int {
+	if a == b {
+		return 0 // equal
+	} else if a < b {
+		return -1 // less
+	} else if a > b {
+		return 1 // greater
+	} else {
+		return 99 // unknown
+	}
+}
+
+// Nested loops with breaks and continues
+fn sum_with_skip(limit int, skip int) i64 {
+	mut sum := i64(0)
+	for i := 0; i < limit; i++ {
+		if i == skip {
+			continue
+		}
+		if i > limit / 2 && i % 2 == 0 {
+			break
+		}
+		sum += i
+	}
+	return sum
+}
+
+// Multiple return paths
+fn classify_range(val i64) int {
+	if val < 0 {
+		return -1
+	}
+	if val == 0 {
+		return 0
+	}
+	if val < 10 {
+		return 1
+	}
+	if val < 100 {
+		return 2
+	}
+	return 3
+}
+
+fn abs_diff(a i64, b i64) i64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+fn main() {
+	println('=== Advanced Control Flow Tests ===')
+	
+	println('--- Calculator Dispatch')
+	println(calculate(0, 10, 5))
+	println(calculate(1, 10, 5))
+	println(calculate(2, 10, 5))
+	println(calculate(3, 10, 5))
+	println(calculate(99, 10, 5))
+	
+	println('--- Number Categorization')
+	println(categorize_number(-150))
+	println(categorize_number(-50))
+	println(categorize_number(-5))
+	println(categorize_number(0))
+	println(categorize_number(5))
+	println(categorize_number(50))
+	println(categorize_number(150))
+	
+	println('--- Value Comparison')
+	println(compare_values(10, 10))
+	println(compare_values(5, 10))
+	println(compare_values(15, 10))
+	
+	println('--- Loop with Skip')
+	println(sum_with_skip(10, 3))
+	println(sum_with_skip(20, 5))
+	
+	println('--- Range Classification')
+	println(classify_range(-5))
+	println(classify_range(0))
+	println(classify_range(5))
+	println(classify_range(50))
+	println(classify_range(500))
+	
+	println('--- Absolute Difference')
+	println(abs_diff(10, 20))
+	println(abs_diff(20, 10))
+	println(abs_diff(5, 5))
+}

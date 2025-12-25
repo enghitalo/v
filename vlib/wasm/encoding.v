@@ -182,6 +182,26 @@ pub fn (mut mod Module) compile() []u8 {
 		}
 		mod.end_section(tpatch)
 	}
+	// https://webassembly.github.io/spec/core/binary/modules.html#table-section
+	//
+	if mod.tables.len > 0 {
+		tpatch := mod.start_section(.table_section)
+		{
+			mod.u32(u32(mod.tables.len))
+			for tbl in mod.tables {
+				mod.buf << u8(tbl.elem_type) // element type (funcref or externref)
+				if max := tbl.max {
+					mod.buf << 0x01 // limit, max present
+					mod.u32(tbl.min)
+					mod.u32(max)
+				} else {
+					mod.buf << 0x00 // limit, max not present
+					mod.u32(tbl.min)
+				}
+			}
+		}
+		mod.end_section(tpatch)
+	}
 	// https://webassembly.github.io/spec/core/binary/modules.html#binary-memsec
 	//
 	if memory := mod.memory {
@@ -257,6 +277,15 @@ pub fn (mut mod Module) compile() []u8 {
 				mod.buf << 0x03 // global
 				mod.u32(u32(idx + mod.global_imports.len))
 			}
+			for idx, tbl in mod.tables {
+				if !tbl.export {
+					continue
+				}
+				lsz++
+				mod.name(tbl.name)
+				mod.buf << 0x01 // table
+				mod.u32(u32(idx))
+			}
 			mod.patch_u32(lpatch, u32(lsz))
 		}
 		mod.end_section(tpatch)
@@ -268,6 +297,41 @@ pub fn (mut mod Module) compile() []u8 {
 		tpatch := mod.start_section(.start_section)
 		{
 			mod.u32(u32(ftt.idx + mod.fn_imports.len))
+		}
+		mod.end_section(tpatch)
+	}
+	// https://webassembly.github.io/spec/core/binary/modules.html#element-section
+	//
+	if mod.elements.len > 0 {
+		tpatch := mod.start_section(.element_section)
+		{
+			mod.u32(u32(mod.elements.len))
+			for elem in mod.elements {
+				// Element kind: active with table index (0x00)
+				mod.buf << 0x00
+				// Table index
+				mod.u32(elem.table_idx)
+				// Offset expression
+				{
+					mut ptr := 0
+					for patch in elem.offset.call_patches {
+						idx := mod.get_function_idx(patch)
+						mod.buf << elem.offset.code[ptr..patch.pos]
+						mod.u32(u32(idx))
+						ptr = patch.pos
+					}
+					mod.buf << elem.offset.code[ptr..]
+				}
+				mod.buf << 0x0B // END expression opcode
+				// Element count and function indices
+				mod.u32(u32(elem.func_names.len))
+				for fname in elem.func_names {
+					ftt := mod.functions[fname] or {
+						panic('element function ${fname} does not exist')
+					}
+					mod.u32(u32(ftt.idx + mod.fn_imports.len))
+				}
+			}
 		}
 		mod.end_section(tpatch)
 	}

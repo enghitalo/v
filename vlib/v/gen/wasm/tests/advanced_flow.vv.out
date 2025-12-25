@@ -1,0 +1,32 @@
+=== Advanced Control Flow Tests ===
+--- Calculator Dispatch
+15
+5
+50
+2
+0
+--- Number Categorization
+-3
+-2
+-1
+0
+1
+2
+3
+--- Value Comparison
+0
+-1
+1
+--- Loop with Skip
+6
+15
+--- Range Classification
+-1
+0
+1
+2
+3
+--- Absolute Difference
+10
+10
+0

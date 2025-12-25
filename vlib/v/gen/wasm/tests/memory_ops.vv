@@ -1,0 +1,136 @@
+// Test memory operations and bitwise algorithms
+// This tests the wasm memory model and complex data manipulation
+
+fn abs_i64(n i64) i64 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+fn max_i64(a i64, b i64) i64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+fn min_i64(a i64, b i64) i64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+fn clamp(val i64, min_val i64, max_val i64) i64 {
+	if val < min_val {
+		return min_val
+	}
+	if val > max_val {
+		return max_val
+	}
+	return val
+}
+
+fn count_bits(n i64) int {
+	mut count := 0
+	mut num := n
+	for num != 0 {
+		count += int(num & 1)
+		num >>= 1
+	}
+	return count
+}
+
+fn reverse_bits_32(n u32) u32 {
+	mut result := u32(0)
+	mut val := n
+	for i := 0; i < 32; i++ {
+		result <<= 1
+		result |= val & 1
+		val >>= 1
+	}
+	return result
+}
+
+fn is_power_of_two(n i64) bool {
+	if n <= 0 {
+		return false
+	}
+	return (n & (n - 1)) == 0
+}
+
+fn next_power_of_two(n i64) i64 {
+	if n <= 1 {
+		return 1
+	}
+	mut power := i64(1)
+	for power < n {
+		power <<= 1
+	}
+	return power
+}
+
+fn hamming_distance(a i64, b i64) int {
+	xor_val := a ^ b
+	return count_bits(xor_val)
+}
+
+fn rotate_left_32(n u32, shift int) u32 {
+	s := u32(shift) & 31
+	return (n << s) | (n >> (32 - s))
+}
+
+fn rotate_right_32(n u32, shift int) u32 {
+	s := u32(shift) & 31
+	return (n >> s) | (n << (32 - s))
+}
+
+fn swap_bytes_32(n u32) u32 {
+	return ((n & 0xFF) << 24) | ((n & 0xFF00) << 8) | ((n & 0xFF0000) >> 8) | ((n & 0xFF000000) >> 24)
+}
+
+fn sign_extend_8(n u8) i64 {
+	if n & 0x80 != 0 {
+		return i64(n) | i64(0xFFFFFFFFFFFFFF00)
+	}
+	return i64(n)
+}
+
+fn main() {
+	println('=== Memory and Bit Operation Tests ===')
+	
+	println('--- Basic Math Operations')
+	println(abs_i64(-42))
+	println(abs_i64(42))
+	println(max_i64(10, 20))
+	println(min_i64(10, 20))
+	println(clamp(15, 10, 20))
+	println(clamp(5, 10, 20))
+	println(clamp(25, 10, 20))
+	
+	println('--- Bit Counting Operations')
+	println(count_bits(15))
+	println(count_bits(255))
+	println(count_bits(0))
+	println(count_bits(1023))
+	
+	println('--- Power of Two Operations')
+	println(is_power_of_two(16))
+	println(is_power_of_two(15))
+	println(next_power_of_two(10))
+	println(next_power_of_two(16))
+	
+	println('--- Hamming Distance')
+	println(hamming_distance(7, 15))
+	println(hamming_distance(0, 255))
+	
+	println('--- Bit Rotation')
+	println(rotate_left_32(0x12345678, 8))
+	println(rotate_right_32(0x12345678, 8))
+	
+	println('--- Byte Operations')
+	println(swap_bytes_32(0x12345678))
+	println(sign_extend_8(0x7F))
+	println(sign_extend_8(0xFF))
+}
