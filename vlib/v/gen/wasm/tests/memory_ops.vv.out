@@ -1,0 +1,29 @@
+=== Memory and Bit Operation Tests ===
+--- Basic Math Operations
+42
+42
+20
+10
+15
+10
+20
+--- Bit Counting Operations
+4
+8
+0
+10
+--- Power of Two Operations
+true
+false
+16
+16
+--- Hamming Distance
+4
+8
+--- Bit Rotation
+305419896
+2018915346
+--- Byte Operations
+2018915346
+127
+-1
