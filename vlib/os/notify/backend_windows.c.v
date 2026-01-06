@@ -4,6 +4,20 @@ import time
 
 #flag windows -lws2_32
 
+// Windows backend for FdNotifier using polling approach
+//
+// Note: Unlike Linux (epoll) and macOS (kqueue), Windows doesn't have a direct
+// equivalent for file descriptor readiness notifications. IOCP (I/O Completion Ports)
+// is completion-based rather than readiness-based.
+//
+// This implementation uses a polling approach with PeekNamedPipe to check pipe
+// readiness. While not as efficient as event-driven approaches, it provides
+// compatibility with the FdNotifier interface and works correctly for the
+// intended use cases (pipes, sockets).
+//
+// For production use with sockets, consider using WSAEventSelect or IOCP with
+// overlapped I/O operations for better performance.
+
 // Windows API declarations for pipe/file readiness checking
 fn C._get_osfhandle(int) isize
 fn C.PeekNamedPipe(voidptr, voidptr, u32, &u32, &u32, &u32) int
