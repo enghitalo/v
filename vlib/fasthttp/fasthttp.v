@@ -44,6 +44,8 @@ fn C.htons(__hostshort u16) u16
 
 fn C.fcntl(fd int, cmd int, arg int) int
 
+fn C.accept4(sockfd int, addr &net.Addr, addrlen &u32, flags int) int
+
 pub struct Slice {
 pub:
 	start int

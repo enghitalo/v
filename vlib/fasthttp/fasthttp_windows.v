@@ -1,12 +1,5 @@
 module fasthttp
 
-struct Server {
-pub:
-	port int = 3000
-mut:
-	request_handler fn (HttpRequest) ![]u8 @[required]
-}
-
 // new_server creates and initializes a new Server instance.
 pub fn new_server(config ServerConfig) !&Server {
 	mut server := &Server{
