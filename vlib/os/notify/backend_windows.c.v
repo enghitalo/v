@@ -19,16 +19,12 @@ import time
 // overlapped I/O operations for better performance.
 
 // Windows API declarations for pipe/file readiness checking
-fn C._get_osfhandle(int) voidptr
-fn C.PeekNamedPipe(voidptr, voidptr, u32, &u32, &u32, &u32) int
+// fn C.PeekNamedPipe(hNamedPipe voidptr, lpBuffer voidptr, nBufferSize int, lpBytesRead voidptr, lpTotalBytesAvail voidptr,
+// 	lpBytesLeftThisMessage voidptr) bool
 fn C.GetFileType(voidptr) u32
 fn C.WaitForMultipleObjects(u32, &voidptr, int, u32) u32
 fn C.CreateEventW(voidptr, int, int, voidptr) voidptr
-fn C.SetEvent(voidptr) int
 fn C.ResetEvent(voidptr) int
-fn C.CloseHandle(voidptr) int
-fn C.WSAGetLastError() int
-fn C.GetLastError() u32
 
 // Windows file type constants
 const file_type_char = u32(0x0002)
@@ -51,7 +47,7 @@ mut:
 
 struct FdInfo {
 mut:
-	handle            voidptr
+	handle            C.intptr_t
 	events            FdEventType
 	conf_flags        []FdConfigFlags
 	last_ready        bool
@@ -234,7 +230,7 @@ fn (mut in_ IocpNotifier) close() ! {
 }
 
 // Helper function to check if handle is readable
-fn is_readable(handle voidptr) bool {
+fn is_readable(handle C.intptr_t) bool {
 	file_type := C.GetFileType(handle)
 
 	// For pipes, use PeekNamedPipe
@@ -242,7 +238,7 @@ fn is_readable(handle voidptr) bool {
 		mut bytes_avail := u32(0)
 		result := C.PeekNamedPipe(handle, unsafe { nil }, 0, unsafe { nil }, &bytes_avail,
 			unsafe { nil })
-		if result != 0 && bytes_avail > 0 {
+		if result != false && bytes_avail > 0 {
 			return true
 		}
 	}
@@ -254,7 +250,7 @@ fn is_readable(handle voidptr) bool {
 // Note: For pipes, this currently always returns true, which may not be accurate
 // if the pipe buffer is full. In practice, this is acceptable for most use cases
 // as pipe writes are typically non-blocking or buffer sizes are large enough.
-fn is_writable(handle voidptr) bool {
+fn is_writable(handle C.intptr_t) bool {
 	file_type := C.GetFileType(handle)
 
 	// For pipes, they're usually writable unless full
@@ -267,14 +263,14 @@ fn is_writable(handle voidptr) bool {
 }
 
 // Helper function to check if handle is closed/disconnected
-fn is_closed(handle voidptr) bool {
+fn is_closed(handle C.intptr_t) bool {
 	file_type := C.GetFileType(handle)
 
 	// For pipes, check if PeekNamedPipe fails
 	if file_type == file_type_pipe {
 		result := C.PeekNamedPipe(handle, unsafe { nil }, 0, unsafe { nil }, unsafe { nil },
 			unsafe { nil })
-		if result == 0 {
+		if result == false {
 			return true
 		}
 	}
