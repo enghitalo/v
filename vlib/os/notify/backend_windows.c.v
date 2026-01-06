@@ -45,16 +45,16 @@ const invalid_handle_value = voidptr(-1)
 struct IocpNotifier {
 mut:
 	// Map of file descriptor to info
-	fd_map        map[int]FdInfo
-	wakeup_event  voidptr
+	fd_map       map[int]FdInfo
+	wakeup_event voidptr
 }
 
 struct FdInfo {
 mut:
-	handle      voidptr
-	events      FdEventType
-	conf_flags  []FdConfigFlags
-	last_ready  bool
+	handle            voidptr
+	events            FdEventType
+	conf_flags        []FdConfigFlags
+	last_ready        bool
 	oneshot_triggered bool
 }
 
@@ -70,8 +70,8 @@ pub:
 // implementations without exposing the concrete type
 pub fn new() !FdNotifier {
 	// Create a manual-reset event for waking up
-	wakeup := C.CreateEventW(voidptr(0), 1, 0, voidptr(0))
-	if wakeup == voidptr(0) {
+	wakeup := C.CreateEventW(unsafe { nil }, 1, 0, unsafe { nil })
+	if wakeup == unsafe { nil } {
 		return error('Failed to create wakeup event: ${C.GetLastError()}')
 	}
 
@@ -98,10 +98,10 @@ fn (mut in_ IocpNotifier) add(fd int, events FdEventType, conf ...FdConfigFlags)
 
 	// Store the mapping
 	in_.fd_map[fd] = FdInfo{
-		handle:      handle
-		events:      events
-		conf_flags:  conf.clone()
-		last_ready:  false
+		handle:            handle
+		events:            events
+		conf_flags:        conf.clone()
+		last_ready:        false
 		oneshot_triggered: false
 	}
 }
@@ -128,7 +128,7 @@ fn (mut in_ IocpNotifier) remove(fd int) ! {
 // wait waits to be notified of events on the watch list
 fn (mut in_ IocpNotifier) wait(timeout time.Duration) []FdEvent {
 	mut result := []FdEvent{}
-	
+
 	start_time := time.now()
 	timeout_ns := timeout.nanoseconds()
 	mut sleep_duration := 500 * time.microsecond // Start with 500μs
@@ -226,26 +226,27 @@ fn (mut in_ IocpNotifier) wait(timeout time.Duration) []FdEvent {
 // close closes the IocpNotifier
 fn (mut in_ IocpNotifier) close() ! {
 	in_.fd_map.clear()
-	
-	if in_.wakeup_event != voidptr(0) {
+
+	if in_.wakeup_event != unsafe { nil } {
 		C.CloseHandle(in_.wakeup_event)
-		in_.wakeup_event = voidptr(0)
+		in_.wakeup_event = unsafe { nil }
 	}
 }
 
 // Helper function to check if handle is readable
 fn is_readable(handle voidptr) bool {
 	file_type := C.GetFileType(handle)
-	
+
 	// For pipes, use PeekNamedPipe
 	if file_type == file_type_pipe {
 		mut bytes_avail := u32(0)
-		result := C.PeekNamedPipe(handle, voidptr(0), 0, voidptr(0), &bytes_avail, voidptr(0))
+		result := C.PeekNamedPipe(handle, unsafe { nil }, 0, unsafe { nil }, &bytes_avail,
+			unsafe { nil })
 		if result != 0 && bytes_avail > 0 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -255,28 +256,29 @@ fn is_readable(handle voidptr) bool {
 // as pipe writes are typically non-blocking or buffer sizes are large enough.
 fn is_writable(handle voidptr) bool {
 	file_type := C.GetFileType(handle)
-	
+
 	// For pipes, they're usually writable unless full
 	// A more accurate implementation would need to check the buffer status
 	if file_type == file_type_pipe {
 		return true
 	}
-	
+
 	return false
 }
 
 // Helper function to check if handle is closed/disconnected
 fn is_closed(handle voidptr) bool {
 	file_type := C.GetFileType(handle)
-	
+
 	// For pipes, check if PeekNamedPipe fails
 	if file_type == file_type_pipe {
-		result := C.PeekNamedPipe(handle, voidptr(0), 0, voidptr(0), voidptr(0), voidptr(0))
+		result := C.PeekNamedPipe(handle, unsafe { nil }, 0, unsafe { nil }, unsafe { nil },
+			unsafe { nil })
 		if result == 0 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
