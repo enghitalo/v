@@ -62,6 +62,8 @@ fn C.listen(sockfd int, backlog int) int
 // fn C.accept(sockfd int, addr &C.sockaddr, addrlen &C.socklen_t) int
 fn C.accept(sockfd int, addr &Addr, addrlen &u32) int
 
+fn C.accept4(sockfd int, addr &net.Addr, addrlen &u32, flags int) int
+
 fn C.getaddrinfo(node &char, service &char, hints &C.addrinfo, res &&C.addrinfo) int
 
 fn C.freeaddrinfo(info &C.addrinfo)

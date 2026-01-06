@@ -44,8 +44,6 @@ fn C.htons(__hostshort u16) u16
 
 fn C.fcntl(fd int, cmd int, arg int) int
 
-fn C.accept4(sockfd int, addr &net.Addr, addrlen &u32, flags int) int
-
 pub struct Slice {
 pub:
 	start int
@@ -178,7 +176,13 @@ fn create_server_socket(port int) int {
 
 fn handle_accept_loop(mut notifier notify.FdNotifier, listen_fd int) {
 	for {
-		client_fd := C.accept4(listen_fd, C.NULL, C.NULL, C.SOCK_NONBLOCK)
+		client_fd := $if linux {
+			// On Linux, we can use accept4 with SOCK_NONBLOCK to avoid an extra fcntl call
+			C.accept4(listen_fd, C.NULL, C.NULL, C.SOCK_NONBLOCK)
+		} $else {
+			C.accept(listen_fd, C.NULL, C.NULL)
+		}
+
 		if client_fd < 0 {
 			if C.errno == C.EAGAIN || C.errno == C.EWOULDBLOCK {
 				break // No more incoming connections; exit loop.
@@ -187,6 +191,11 @@ fn handle_accept_loop(mut notifier notify.FdNotifier, listen_fd int) {
 			C.perror(c'Accept failed')
 			break
 		}
+
+		$if !linux {
+			set_blocking(client_fd, false)
+		}
+
 		// Enable TCP_NODELAY for lower latency
 		opt := 1
 		C.setsockopt(client_fd, C.IPPROTO_TCP, C.TCP_NODELAY, &opt, sizeof(opt))
@@ -228,6 +237,8 @@ fn process_events(mut server Server, listen_fd int) {
 		request_buffer.flags.set(.noslices | .nogrow | .noshrink)
 	}
 	for {
+		// It is a little bit slow to allocate on each iteration, but it
+		// is simpler to implement. Optimization can be done later if needed.
 		for event in notifier.wait(time.infinite) {
 			if event.fd == listen_fd {
 				handle_accept_loop(mut notifier, listen_fd)
