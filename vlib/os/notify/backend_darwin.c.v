@@ -3,6 +3,16 @@ module notify
 import time
 import os
 
+// This is the macOS/BSD backend for the notify module using kqueue.
+// 
+// kqueue has different capabilities compared to Linux's epoll:
+// - Does not support: peer_hangup, error, hangup event types
+// - Does not support: wake_up, exclusive config flags
+// - Edge triggering (EV_CLEAR) behaves differently than epoll's EPOLLET
+//
+// When unsupported features are requested, functions return errors
+// instead of panicking to allow graceful degradation.
+
 #insert "@VEXEROOT/vlib/os/notify/kqueue.h"
 
 pub struct C.kevent {
@@ -97,8 +107,8 @@ fn (mut kn KqueueNotifier) ctl(fd int, filter i16, flags u16) ! {
 
 // add adds a file descriptor to the watch list
 fn (mut kn KqueueNotifier) add(fd int, events FdEventType, conf ...FdConfigFlags) ! {
-	filter := filter_to_mask(events)
-	flags := flags_to_mask(...conf)
+	filter := filter_to_mask(events)!
+	flags := flags_to_mask(...conf)!
 	kn.ctl(fd, filter, flags)!
 }
 
@@ -182,7 +192,7 @@ fn event_mask_to_flag(filter i16, flags u16) FdEventType {
 
 // filter_to_mask is a helper function that converts FdEventType
 // to a bitmask used by the C functions
-fn filter_to_mask(events FdEventType) i16 {
+fn filter_to_mask(events FdEventType) !i16 {
 	mut mask := i16(0)
 	if events.has(.read) {
 		mask |= kqueue_read
@@ -194,20 +204,20 @@ fn filter_to_mask(events FdEventType) i16 {
 		mask |= kqueue_exception
 	}
 	if events.has(.peer_hangup) {
-		panic("Kqueue does not support 'peer_hangup' event type.")
+		return error("kqueue does not support 'peer_hangup' event type")
 	}
 	if events.has(.error) {
-		panic("Kqueue does not support 'error' event type.")
+		return error("kqueue does not support 'error' event type")
 	}
 	if events.has(.hangup) {
-		panic("Kqueue does not support 'hangup' event type.")
+		return error("kqueue does not support 'hangup' event type")
 	}
 	return mask
 }
 
 // flags_to_mask is a helper function that converts FdConfigFlags
 // to a bitmask used by the C functions
-fn flags_to_mask(confs ...FdConfigFlags) u16 {
+fn flags_to_mask(confs ...FdConfigFlags) !u16 {
 	mut mask := kqueue_add | kqueue_enable
 	for conf in confs {
 		if conf.has(.edge_trigger) {
@@ -217,10 +227,10 @@ fn flags_to_mask(confs ...FdConfigFlags) u16 {
 			mask |= kqueue_oneshot
 		}
 		if conf.has(.wake_up) {
-			panic("Kqueue does not support 'wake_up' flag.")
+			return error("kqueue does not support 'wake_up' flag")
 		}
 		if conf.has(.exclusive) {
-			panic("Kqueue does not support 'exclusive' flag.")
+			return error("kqueue does not support 'exclusive' flag")
 		}
 	}
 	return mask
