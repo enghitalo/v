@@ -3,11 +3,20 @@
 import os
 import os.notify
 
+fn C._pipe(&int, u32, int) int
+
 // make a pipe and return the (read, write) file descriptors
 fn make_pipe() !(int, int) {
 	pipefd := [2]int{}
-	if C.pipe(&pipefd[0]) != 0 {
-		return error('error ${C.errno}: ' + os.posix_get_error_msg(C.errno))
+	$if windows {
+		// Use 0 for buffer size to let the system choose the default, matching vlib/os/pipe.c.v
+		if C._pipe(&pipefd[0], 0, 0) != 0 {
+			return error('Failed to create pipe')
+		}
+	} $else {
+		if C.pipe(&pipefd[0]) != 0 {
+			return error('error ${C.errno}: ' + os.posix_get_error_msg(C.errno))
+		}
 	}
 	return pipefd[0], pipefd[1]
 }
