@@ -3,11 +3,19 @@
 import os
 import os.notify
 
+fn C._pipe(&int, u32, int) int
+
 // make a pipe and return the (read, write) file descriptors
 fn make_pipe() !(int, int) {
 	pipefd := [2]int{}
-	if C.pipe(&pipefd[0]) != 0 {
-		return error('error ${C.errno}: ' + os.posix_get_error_msg(C.errno))
+	$if windows {
+		if C._pipe(&pipefd[0], 256, 0) != 0 {
+			return error('error ${C.errno}: Failed to create pipe')
+		}
+	} $else {
+		if C.pipe(&pipefd[0]) != 0 {
+			return error('error ${C.errno}: ' + os.posix_get_error_msg(C.errno))
+		}
 	}
 	return pipefd[0], pipefd[1]
 }
