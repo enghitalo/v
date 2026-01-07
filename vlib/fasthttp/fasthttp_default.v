@@ -103,7 +103,7 @@ pub fn new_server(config ServerConfig) !&Server {
 	return server
 }
 
-fn set_blocking(fd int, blocking bool) ! {
+fn set_blocking(fd int, blocking bool) {
 	$if windows {
 		t := if blocking { u32(0) } else { u32(1) }
 		C.ioctlsocket(fd, fionbio, &t)
