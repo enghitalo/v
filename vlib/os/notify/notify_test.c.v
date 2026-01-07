@@ -9,8 +9,9 @@ fn C._pipe(&int, u32, int) int
 fn make_pipe() !(int, int) {
 	pipefd := [2]int{}
 	$if windows {
-		if C._pipe(&pipefd[0], 256, 0) != 0 {
-			return error('error ${C.errno}: Failed to create pipe')
+		// Use 0 for buffer size to let the system choose the default, matching vlib/os/pipe.c.v
+		if C._pipe(&pipefd[0], 0, 0) != 0 {
+			return error('Failed to create pipe')
 		}
 	} $else {
 		if C.pipe(&pipefd[0]) != 0 {
