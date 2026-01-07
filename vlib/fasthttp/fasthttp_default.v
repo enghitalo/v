@@ -23,27 +23,25 @@ const tiny_bad_request_response = 'HTTP/1.1 400 Bad Request\r\nContent-Length: 0
 const status_444_response = 'HTTP/1.1 444 No Response\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'.bytes()
 const status_413_response = 'HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'.bytes()
 
-$if !windows {
-	fn C.socket(domain net.AddrFamily, typ net.SocketType, protocol int) int
+fn C.socket(domain net.AddrFamily, typ net.SocketType, protocol int) int
 
-	fn C.bind(sockfd int, addr &net.Addr, addrlen u32) int
+fn C.bind(sockfd int, addr &net.Addr, addrlen u32) int
 
-	fn C.send(__fd int, __buf voidptr, __n usize, __flags int) int
+fn C.send(__fd int, __buf voidptr, __n usize, __flags int) int
 
-	fn C.recv(__fd int, __buf voidptr, __n usize, __flags int) int
+fn C.recv(__fd int, __buf voidptr, __n usize, __flags int) int
 
-	fn C.setsockopt(__fd int, __level int, __optname int, __optval voidptr, __optlen u32) int
+fn C.setsockopt(__fd int, __level int, __optname int, __optval voidptr, __optlen u32) int
 
-	fn C.listen(__fd int, __n int) int
+fn C.listen(__fd int, __n int) int
 
-	fn C.perror(s &u8)
+fn C.perror(s &u8)
 
-	fn C.close(fd int) int
+fn C.close(fd int) int
 
-	fn C.htons(__hostshort u16) u16
+fn C.htons(__hostshort u16) u16
 
-	fn C.fcntl(fd int, cmd int, arg int) int
-}
+fn C.fcntl(fd int, cmd int, arg int) int
 
 pub struct Slice {
 pub:
@@ -106,7 +104,7 @@ pub fn new_server(config ServerConfig) !&Server {
 fn set_blocking(fd int, blocking bool) {
 	$if windows {
 		t := if blocking { u32(0) } else { u32(1) }
-		C.ioctlsocket(fd, fionbio, &t)
+		C.ioctlsocket(fd, C.FIONBIO, &t)
 	} $else {
 		flags := C.fcntl(fd, C.F_GETFL, 0)
 		if flags == -1 {
