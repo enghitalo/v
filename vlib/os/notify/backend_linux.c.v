@@ -3,6 +3,11 @@ module notify
 import time
 import os
 
+// This is the Linux backend for the notify module using epoll.
+//
+// epoll supports all event types and config flags defined in the
+// FdNotifier interface, making it the most feature-complete backend.
+
 #include <sys/epoll.h>
 
 pub struct C.epoll_event {

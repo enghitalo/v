@@ -15,6 +15,8 @@ fn make_pipe() !(int, int) {
 	return -1, -1
 }
 
+// test_level_trigger tests level-triggered mode where events continue
+// to be reported as long as the condition persists (e.g., data available to read)
 fn test_level_trigger() {
 	// currently only linux and macos are supported
 	$if linux || macos {
@@ -36,6 +38,8 @@ fn test_level_trigger() {
 	}
 }
 
+// test_edge_trigger tests edge-triggered mode where events are only
+// reported when the state changes. Note: behavior differs between platforms.
 fn test_edge_trigger() {
 	// currently only linux and macos are supported
 	$if linux || macos {
@@ -84,6 +88,8 @@ fn test_edge_trigger() {
 	}
 }
 
+// test_one_shot tests one-shot mode where an event is only reported once
+// and then must be re-armed to receive further notifications
 fn test_one_shot() {
 	$if linux || macos {
 		mut notifier := notify.new()!
@@ -109,7 +115,7 @@ fn test_one_shot() {
 	}
 }
 
-// Kqueue does not support 'hangup' event type.
+// test_hangup tests hangup event detection (Linux only - kqueue doesn't support it)
 fn test_hangup() {
 	$if linux {
 		mut notifier := notify.new()!
@@ -132,6 +138,7 @@ fn test_hangup() {
 	}
 }
 
+// test_write tests write readiness notification
 fn test_write() {
 	$if linux || macos {
 		mut notifier := notify.new()!
@@ -153,6 +160,7 @@ fn test_write() {
 	}
 }
 
+// test_remove tests removing a file descriptor from the watch list
 fn test_remove() {
 	$if linux || macos {
 		mut notifier := notify.new()!

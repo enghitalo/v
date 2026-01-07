@@ -3,6 +3,16 @@ module notify
 import time
 import os
 
+// This is the macOS/BSD backend for the notify module using kqueue.
+// 
+// kqueue has different capabilities compared to Linux's epoll:
+// - Does not support: peer_hangup, error, hangup event types
+// - Does not support: wake_up, exclusive config flags
+// - Edge triggering (EV_CLEAR) behaves differently than epoll's EPOLLET
+//
+// When unsupported features are requested, functions return errors
+// instead of panicking to allow graceful degradation.
+
 #insert "@VEXEROOT/vlib/os/notify/kqueue.h"
 
 pub struct C.kevent {
