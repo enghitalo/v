@@ -183,3 +183,107 @@ fn check_read_event(mut notifier notify.FdNotifier, reader_fd int, expected stri
 	s, _ := os.fd_read(events[0].fd, expected.len)
 	assert s == expected
 }
+
+// Test that unsupported event types on macOS return proper errors instead of panicking
+fn test_unsupported_event_types_on_macos() {
+	$if macos {
+		mut notifier := notify.new()!
+		reader, writer := make_pipe()!
+		defer {
+			os.fd_close(reader)
+			os.fd_close(writer)
+			notifier.close() or {}
+		}
+
+		// Test that peer_hangup is not supported
+		if _ := notifier.add(reader, .peer_hangup) {
+			assert false, 'peer_hangup should not be supported on macOS'
+		} else {
+			// Expected error
+			assert err.msg().contains('peer_hangup')
+		}
+
+		// Test that error event type is not supported
+		if _ := notifier.add(reader, .error) {
+			assert false, 'error event type should not be supported on macOS'
+		} else {
+			// Expected error
+			assert err.msg().contains('error')
+		}
+
+		// Test that hangup is not supported
+		if _ := notifier.add(reader, .hangup) {
+			assert false, 'hangup should not be supported on macOS'
+		} else {
+			// Expected error
+			assert err.msg().contains('hangup')
+		}
+	}
+}
+
+// Test that unsupported config flags on macOS return proper errors instead of panicking
+fn test_unsupported_config_flags_on_macos() {
+	$if macos {
+		mut notifier := notify.new()!
+		reader, writer := make_pipe()!
+		defer {
+			os.fd_close(reader)
+			os.fd_close(writer)
+			notifier.close() or {}
+		}
+
+		// Test that wake_up flag is not supported
+		if _ := notifier.add(reader, .read, .wake_up) {
+			assert false, 'wake_up flag should not be supported on macOS'
+		} else {
+			// Expected error
+			assert err.msg().contains('wake_up')
+		}
+
+		// Test that exclusive flag is not supported
+		if _ := notifier.add(reader, .read, .exclusive) {
+			assert false, 'exclusive flag should not be supported on macOS'
+		} else {
+			// Expected error
+			assert err.msg().contains('exclusive')
+		}
+	}
+}
+
+// Test multiple file descriptors on macOS
+fn test_multiple_fds_macos() {
+	$if macos {
+		mut notifier := notify.new()!
+		reader1, writer1 := make_pipe()!
+		reader2, writer2 := make_pipe()!
+		defer {
+			os.fd_close(reader1)
+			os.fd_close(writer1)
+			os.fd_close(reader2)
+			os.fd_close(writer2)
+			notifier.close() or {}
+		}
+
+		notifier.add(reader1, .read)!
+		notifier.add(reader2, .read)!
+
+		// Write to both pipes
+		os.fd_write(writer1, 'pipe1')
+		os.fd_write(writer2, 'pipe2')
+
+		// Should get events from both
+		events := notifier.wait(0)
+		assert events.len == 2
+		
+		// Read from both to verify
+		for event in events {
+			if event.fd == reader1 {
+				s, _ := os.fd_read(event.fd, 5)
+				assert s == 'pipe1'
+			} else if event.fd == reader2 {
+				s, _ := os.fd_read(event.fd, 5)
+				assert s == 'pipe2'
+			}
+		}
+	}
+}
