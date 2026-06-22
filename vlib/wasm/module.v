@@ -69,6 +69,8 @@ mut:
 	fn_imports     []FunctionImport
 	global_imports []GlobalImport
 	segments       []DataSegment
+	tables         []Table
+	elements       []Element
 	debug          bool
 	mod_name       ?string
 }
@@ -106,6 +108,21 @@ struct DataSegment {
 	idx  ?int
 	data []u8
 	name ?string
+}
+
+struct Table {
+	name       string
+	export     bool
+	min        u32
+	max        ?u32
+	elem_type  RefType = .funcref_t
+}
+
+struct Element {
+	table_idx  u32
+	offset     ConstExpression
+	func_names []string
+	name       ?string
 }
 
 pub type LocalIndex = int
@@ -277,4 +294,102 @@ pub fn (mut mod Module) new_global_import(modn string, name string, typ ValType,
 // See `new_global`.
 pub fn (mut mod Module) assign_global_init(global GlobalIndex, init ConstExpression) {
 	mod.globals[global].init = init
+}
+
+// new_table creates a new table and returns its index.
+pub fn (mut mod Module) new_table(name string, export bool, min u32, max ?u32) int {
+	len := mod.tables.len
+	mod.tables << Table{
+		name:      name
+		export:    export
+		min:       min
+		max:       max
+		elem_type: .funcref_t
+	}
+	return len
+}
+
+// new_element_segment creates a new element segment for initializing tables.
+pub fn (mut mod Module) new_element_segment(name ?string, table_idx u32, offset ConstExpression, func_names []string) int {
+	len := mod.elements.len
+	mod.elements << Element{
+		table_idx:  table_idx
+		offset:     offset
+		func_names: func_names
+		name:       name
+	}
+	return len
+}
+
+// wasi_import_signature returns the function signature for a WASI preview1 function.
+pub fn wasi_import_signature(name string) ?FuncType {
+	return match name {
+		'fd_write' {
+			FuncType{
+				parameters: [.i32_t, .i32_t, .i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'proc_exit' {
+			FuncType{
+				parameters: [.i32_t]
+				results:    []
+				name:       none
+			}
+		}
+		'args_get' {
+			FuncType{
+				parameters: [.i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'args_sizes_get' {
+			FuncType{
+				parameters: [.i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'environ_get' {
+			FuncType{
+				parameters: [.i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'environ_sizes_get' {
+			FuncType{
+				parameters: [.i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'clock_time_get' {
+			FuncType{
+				parameters: [.i32_t, .i64_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		'random_get' {
+			FuncType{
+				parameters: [.i32_t, .i32_t]
+				results:    [.i32_t]
+				name:       none
+			}
+		}
+		else {
+			none
+		}
+	}
+}
+
+// add_wasi_import adds a WASI preview1 import to the module.
+pub fn (mut mod Module) add_wasi_import(name string) int {
+	sig := wasi_import_signature(name) or { panic('Unknown WASI function: ${name}') }
+	mod.new_function_import('wasi_snapshot_preview1', name, sig.parameters, sig.results)
+	// Return the index of the imported function
+	return mod.fn_imports.len - 1
 }

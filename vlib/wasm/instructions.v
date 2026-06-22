@@ -1007,6 +1007,99 @@ pub fn (mut func Function) call_import(mod string, name string) {
 	})
 }
 
+// call_indirect calls a function indirectly through a table.
+// WebAssembly instruction: `call_indirect`.
+pub fn (mut func Function) call_indirect(type_idx u32, table_idx u32) {
+	func.code << 0x11 // call_indirect
+	func.u32(type_idx)
+	func.u32(table_idx)
+}
+
+// br branches to a loop or block at the given depth.
+// WebAssembly instruction: `br`.
+pub fn (mut func Function) br(depth u32) {
+	func.code << 0x0C // br
+	func.u32(depth)
+}
+
+// br_if conditionally branches to a loop or block at the given depth.
+// WebAssembly instruction: `br_if`.
+pub fn (mut func Function) br_if(depth u32) {
+	func.code << 0x0D // br_if
+	func.u32(depth)
+}
+
+// br_table performs an indirect branch through a label table.
+// WebAssembly instruction: `br_table`.
+pub fn (mut func Function) br_table(labels []u32, default_label u32) {
+	func.code << 0x0E // br_table
+	func.u32(u32(labels.len))
+	for label in labels {
+		func.u32(label)
+	}
+	func.u32(default_label)
+}
+
+// i32_eq checks if two i32 values are equal.
+// WebAssembly instruction: `i32.eq`.
+pub fn (mut func Function) i32_eq() {
+	func.code << 0x46 // i32.eq
+}
+
+// i32_ne checks if two i32 values are not equal.
+// WebAssembly instruction: `i32.ne`.
+pub fn (mut func Function) i32_ne() {
+	func.code << 0x47 // i32.ne
+}
+
+// i32_lt_s checks if first i32 value is less than second (signed).
+// WebAssembly instruction: `i32.lt_s`.
+pub fn (mut func Function) i32_lt_s() {
+	func.code << 0x48 // i32.lt_s
+}
+
+// i32_lt_u checks if first i32 value is less than second (unsigned).
+// WebAssembly instruction: `i32.lt_u`.
+pub fn (mut func Function) i32_lt_u() {
+	func.code << 0x49 // i32.lt_u
+}
+
+// i32_gt_s checks if first i32 value is greater than second (signed).
+// WebAssembly instruction: `i32.gt_s`.
+pub fn (mut func Function) i32_gt_s() {
+	func.code << 0x4A // i32.gt_s
+}
+
+// i32_gt_u checks if first i32 value is greater than second (unsigned).
+// WebAssembly instruction: `i32.gt_u`.
+pub fn (mut func Function) i32_gt_u() {
+	func.code << 0x4B // i32.gt_u
+}
+
+// i32_le_s checks if first i32 value is less than or equal to second (signed).
+// WebAssembly instruction: `i32.le_s`.
+pub fn (mut func Function) i32_le_s() {
+	func.code << 0x4C // i32.le_s
+}
+
+// i32_le_u checks if first i32 value is less than or equal to second (unsigned).
+// WebAssembly instruction: `i32.le_u`.
+pub fn (mut func Function) i32_le_u() {
+	func.code << 0x4D // i32.le_u
+}
+
+// i32_ge_s checks if first i32 value is greater than or equal to second (signed).
+// WebAssembly instruction: `i32.ge_s`.
+pub fn (mut func Function) i32_ge_s() {
+	func.code << 0x4E // i32.ge_s
+}
+
+// i32_ge_u checks if first i32 value is greater than or equal to second (unsigned).
+// WebAssembly instruction: `i32.ge_u`.
+pub fn (mut func Function) i32_ge_u() {
+	func.code << 0x4F // i32.ge_u
+}
+
 // load loads a value with type `typ` from memory.
 // WebAssembly instruction: `i32|i64|f32|f64.load`.
 pub fn (mut func Function) load(typ NumType, align int, offset int) {

@@ -1,0 +1,126 @@
+// Test real-world scenarios using algorithms and computations
+// This demonstrates complex calculations and logic
+
+fn factorial_recursive(n i64) i64 {
+	if n <= 1 {
+		return 1
+	}
+	return n * factorial_recursive(n - 1)
+}
+
+fn fibonacci(n int) i64 {
+	if n <= 1 {
+		return i64(n)
+	}
+	mut a := i64(0)
+	mut b := i64(1)
+	for i := 2; i <= n; i++ {
+		tmp := a + b
+		a = b
+		b = tmp
+	}
+	return b
+}
+
+fn is_prime(n i64) bool {
+	if n < 2 {
+		return false
+	}
+	if n == 2 {
+		return true
+	}
+	if n % 2 == 0 {
+		return false
+	}
+	mut i := i64(3)
+	for i * i <= n {
+		if n % i == 0 {
+			return false
+		}
+		i += 2
+	}
+	return true
+}
+
+fn prime_count(limit int) int {
+	mut count := 0
+	for i := 2; i < limit; i++ {
+		if is_prime(i64(i)) {
+			count++
+		}
+	}
+	return count
+}
+
+fn gcd(a_ i64, b_ i64) i64 {
+	mut a := a_
+	mut b := b_
+	if a < 0 {
+		a = -a
+	}
+	if b < 0 {
+		b = -b
+	}
+	for b != 0 {
+		a %= b
+		if a == 0 {
+			return b
+		}
+		b %= a
+	}
+	return a
+}
+
+fn lcm(a i64, b i64) i64 {
+	if a == 0 {
+		return a
+	}
+	res := a * (b / gcd(b, a))
+	if res < 0 {
+		return -res
+	}
+	return res
+}
+
+fn power(base i64, exp i64) i64 {
+	mut result := i64(1)
+	mut e := exp
+	mut b := base
+	for e > 0 {
+		if e & 1 > 0 {
+			result *= b
+		}
+		b *= b
+		e >>= 1
+	}
+	return result
+}
+
+fn main() {
+	println('=== Real World WASM Tests ===')
+	
+	println('--- Factorial Tests')
+	println(factorial_recursive(5))
+	println(factorial_recursive(10))
+	println(factorial_recursive(0))
+	
+	println('--- Fibonacci Tests')
+	println(fibonacci(10))
+	println(fibonacci(20))
+	println(fibonacci(0))
+	
+	println('--- Prime Number Tests')
+	println(is_prime(17))
+	println(is_prime(18))
+	println(prime_count(100))
+	
+	println('--- GCD and LCM Tests')
+	println(gcd(48, 18))
+	println(lcm(12, 18))
+	println(gcd(17, 19))
+	
+	println('--- Power Tests')
+	println(power(2, 10))
+	println(power(3, 5))
+	println(power(5, 0))
+}
